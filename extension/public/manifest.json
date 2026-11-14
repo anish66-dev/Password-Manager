@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "Personal Password Manager",
+  "version": "0.1.0",
+  "description": "Local-first password manager with cloud sync.",
+  "permissions": ["storage"],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Personal Password Manager"
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["content.js"],
+      "all_frames": false,
+      "run_at": "document_idle"
+    }
+  ]
+}
