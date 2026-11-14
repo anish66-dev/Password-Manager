@@ -22,6 +22,6 @@
     "declaration": true,
     "composite": true
   },
-  "references": [{ "path": "./shared" }, { "path": "./extension" }],
+  "references": [{ "path": "./shared" }],
   "files": []
 }

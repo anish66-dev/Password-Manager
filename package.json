@@ -8,7 +8,8 @@
     "extension"
   ],
   "scripts": {
-    "build": "npm run build --workspace=shared && npm run build --workspace=extension",
+    "build": "npm run typecheck && npm run build --workspace=extension",
+    "typecheck": "tsc --build shared && npm run typecheck --workspace=extension",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint .",

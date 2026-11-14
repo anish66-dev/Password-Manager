@@ -21,7 +21,7 @@
     "forceConsistentCasingInFileNames": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "types": ["chrome", "vite/client"],
+    "types": ["chrome", "vite/client", "node"],
     "paths": {
       "@password-manager/shared": ["../shared/src/index.ts"]
     }

@@ -18,11 +18,14 @@ describe("Background Message Router", () => {
     }
   });
 
-  it("handles CONTENT_SCRIPT_PING and acknowledges sender url", async () => {
-    const res = await handleExtensionMessage({
-      type: "CONTENT_SCRIPT_PING",
-      payload: { url: "https://example.com/login" },
-    });
+  it("handles CONTENT_SCRIPT_PING and uses the sender url, not the page-supplied one", async () => {
+    const res = await handleExtensionMessage(
+      {
+        type: "CONTENT_SCRIPT_PING",
+        payload: { url: "https://evil.example/spoofed" },
+      },
+      "https://example.com/login"
+    );
     expect(res.ok).toBe(true);
     if (res.ok) {
       const data = res.data as ContentScriptPingResponseData;

@@ -5,11 +5,6 @@ import {
 
 // Double check top-frame execution as defense-in-depth
 if (window.top === window) {
-  console.log(
-    "[Content Script] Personal Password Manager content script loaded in top frame:",
-    window.location.href
-  );
-
   // Send initial handshake message to the background service worker
   if (typeof chrome !== "undefined" && chrome.runtime?.sendMessage) {
     chrome.runtime.sendMessage(
@@ -20,28 +15,9 @@ if (window.top === window) {
         },
       },
       (rawResponse) => {
-        if (chrome.runtime.lastError) {
-          console.warn("[Content Script] Handshake error:", chrome.runtime.lastError.message);
-          return;
-        }
-
-        if (isValidExtensionResponse<ContentScriptPingResponseData>(rawResponse)) {
-          if (rawResponse.ok) {
-            console.log(
-              "[Content Script] Typed response received from service worker:",
-              rawResponse.data
-            );
-          } else {
-            console.warn(
-              "[Content Script] Service worker responded with error:",
-              rawResponse.error
-            );
-          }
-        } else {
-          console.error(
-            "[Content Script] Invalid response structure from service worker boundary."
-          );
-        }
+        // Handshake only. Nothing is logged into the host page's console.
+        void chrome.runtime.lastError;
+        void isValidExtensionResponse<ContentScriptPingResponseData>(rawResponse);
       }
     );
   }

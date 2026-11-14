@@ -10,7 +10,7 @@ import {
  */
 export async function handleExtensionMessage(
   rawMessage: unknown,
-  _senderUrl?: string
+  senderUrl?: string
 ): Promise<ExtensionResponse<PopupStatusResponseData | ContentScriptPingResponseData>> {
   if (!isValidExtensionMessage(rawMessage)) {
     return {
@@ -37,7 +37,8 @@ export async function handleExtensionMessage(
         ok: true,
         data: {
           acknowledged: true,
-          receivedFromUrl: rawMessage.payload.url,
+          // Origin comes from the browser-provided sender, never from page-supplied data.
+          receivedFromUrl: senderUrl ?? "unknown",
           timestamp: new Date().toISOString(),
         },
       };
