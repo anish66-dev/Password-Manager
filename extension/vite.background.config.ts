@@ -1,7 +1,14 @@
 import { defineConfig } from "vite";
 import path from "node:path";
 
-export default defineConfig({
+/**
+ * Localhost matching exists for testing against test-pages/ only. It is compiled in solely
+ * by the dev-localhost build (vite --mode dev-localhost) and is off in the normal build.
+ */
+export default defineConfig(({ mode }) => ({
+  define: {
+    __ALLOW_LOCALHOST__: JSON.stringify(mode === "dev-localhost"),
+  },
   publicDir: false,
   resolve: {
     alias: {
@@ -17,4 +24,4 @@ export default defineConfig({
       fileName: () => "background.js",
     },
   },
-});
+}));

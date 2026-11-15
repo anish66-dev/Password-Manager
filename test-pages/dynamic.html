@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>JavaScript-rendered login</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        max-width: 420px;
+        margin: 3rem auto;
+      }
+      label {
+        display: block;
+        margin: 0.75rem 0 0.25rem;
+      }
+      input {
+        width: 100%;
+        padding: 0.5rem;
+        box-sizing: border-box;
+      }
+      pre {
+        background: #f1f5f9;
+        padding: 0.5rem;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Single-page style login</h1>
+    <div id="app">Loading...</div>
+    <h3>App state (updates only when the framework sees input events)</h3>
+    <pre id="state">{}</pre>
+    <script>
+      // Imitates a framework with controlled inputs: it tracks the last value it knows about
+      // (like React's value tracker) and only updates state from input events.
+      const state = { username: "", password: "" };
+      const showState = () => {
+        document.getElementById("state").textContent = JSON.stringify(
+          {
+            username: state.username,
+            password: state.password ? "*".repeat(state.password.length) : "",
+          },
+          null,
+          2
+        );
+      };
+
+      function controlled(input, key) {
+        let tracked = "";
+        const proto = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value");
+        Object.defineProperty(input, "value", {
+          configurable: true,
+          get() {
+            return proto.get.call(this);
+          },
+          set(v) {
+            tracked = String(v);
+            proto.set.call(this, v);
+          },
+        });
+        input.addEventListener("input", () => {
+          if (proto.get.call(input) === tracked) return; // framework ignores "no change"
+          tracked = proto.get.call(input);
+          state[key] = tracked;
+          showState();
+        });
+      }
+
+      setTimeout(() => {
+        document.getElementById("app").innerHTML = `
+          <form id="f1">
+            <label>Email <input id="u1" name="email" type="email"></label>
+            <label>Password <input id="p1" name="pw" type="password"></label>
+            <p><button type="submit">Log in</button></p>
+          </form>`;
+        controlled(document.getElementById("u1"), "username");
+        controlled(document.getElementById("p1"), "password");
+        document.getElementById("f1").addEventListener("submit", (e) => e.preventDefault());
+        showState();
+      }, 600);
+
+      // A second form that appears even later (for example a modal).
+      setTimeout(() => {
+        const modal = document.createElement("div");
+        modal.innerHTML = `
+          <hr><h3>Late modal</h3>
+          <form><label>Username <input name="login" type="text"></label>
+          <label>Password <input name="secret" type="password"></label></form>`;
+        document.body.appendChild(modal);
+      }, 2500);
+    </script>
+  </body>
+</html>

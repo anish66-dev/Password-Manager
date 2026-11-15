@@ -125,3 +125,27 @@ npm run format
 - **Session:** the unlocked VEK is held in the service worker and in `chrome.storage.session` (RAM only; cleared on browser restart or extension reload). An alarm locks the vault after inactivity (default 10 minutes, configurable in Settings).
 - **Test vectors:** regenerate with `UPDATE_VECTORS=1 npx vitest run shared/src/crypto/vectors.test.ts`. Review the diff before committing; changing them breaks Android compatibility.
 - A forgotten master password cannot be recovered.
+
+---
+
+## Phase 3: Autofill
+
+- **Matching** (`shared/src/matching`): registrable domain via `tldts` (Public Suffix List, private suffixes such as `github.io` included). The page must be `https`. Userinfo URLs, IP addresses, unknown suffixes and look-alike (punycode) domains never match. A saved login's own scheme is ignored; only the page must be https.
+- **Who decides:** the content script only reports "a login field was focused". The service worker takes the page URL from the browser-provided `sender`, returns suggestions (id, username, domain) with no password, and on a click re-checks the page against the chosen record before it returns credentials to that top frame.
+- **Suggestion UI:** an extension-owned iframe (`suggestions.html`). It only talks to the content script over a `MessageChannel` port. The port is authenticated with a one-time nonce that the content script registers with the service worker and the iframe claims, so a page that forges a port is rejected.
+- **Scope:** top frame only, never on page load, never into cross-origin iframes. Hidden, tiny and off-screen fields are ignored. `autocomplete="new-password"` fields are skipped (registration and change flows are Phase 4).
+
+### Testing autofill
+
+Localhost only matches in a dedicated build. The normal `npm run build` never matches localhost.
+
+```bash
+npm run build:dev-localhost     # builds extension/dist with localhost matching on
+npm run serve:test-pages        # http://localhost:5173/
+```
+
+1. Reload the extension from `chrome://extensions`, open the popup, create or unlock the vault.
+2. Add a login with site `http://localhost`, any username and password.
+3. Open `http://localhost:5173/login.html`, click into a field, then click the suggestion.
+4. Try `dynamic.html` (JavaScript-rendered, controlled inputs) and `hostile.html` (every probe line should say PASS).
+5. Run `npm run build` again before using the extension on real sites.

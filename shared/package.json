@@ -14,6 +14,7 @@
     "lint": "eslint src/"
   },
   "dependencies": {
-    "hash-wasm": "^4.13.0"
+    "hash-wasm": "^4.13.0",
+    "tldts": "^7.5.3"
   }
 }

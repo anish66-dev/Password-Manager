@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Hostile page</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        max-width: 640px;
+        margin: 2rem auto;
+        line-height: 1.5;
+      }
+      input {
+        width: 100%;
+        padding: 0.5rem;
+        box-sizing: border-box;
+        margin-bottom: 0.5rem;
+      }
+      li.pass {
+        color: #166534;
+      }
+      li.fail {
+        color: #b91c1c;
+        font-weight: 700;
+      }
+      li.info {
+        color: #475569;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Hostile page</h1>
+    <p>
+      This page runs scripts that try to read the suggestion frame, forge its channel, and trigger a
+      fill. Every line should say PASS. Then focus a field yourself, click a suggestion, and note
+      that the page only sees credentials after your click (that part is unavoidable).
+    </p>
+    <form onsubmit="return false;">
+      <input id="user" name="username" type="text" autocomplete="username" placeholder="username" />
+      <input
+        id="pass"
+        name="password"
+        type="password"
+        autocomplete="current-password"
+        placeholder="password"
+      />
+    </form>
+    <h3>Probes</h3>
+    <ul id="results"></ul>
+    <p id="summary"></p>
+
+    <script>
+      const results = document.getElementById("results");
+      const user = document.getElementById("user");
+      const pass = document.getElementById("pass");
+      let failures = 0;
+      let userClicked = false;
+      let frameSeen = null;
+
+      function report(kind, text) {
+        if (kind === "fail") failures++;
+        const li = document.createElement("li");
+        li.className = kind;
+        li.textContent = kind.toUpperCase() + ": " + text;
+        results.appendChild(li);
+        document.getElementById("summary").textContent =
+          failures === 0
+            ? "No probe has beaten the extension so far."
+            : failures + " probe(s) FAILED.";
+      }
+
+      // Anything the extension posts to the page's window would be a leak.
+      const strayMessages = [];
+      window.addEventListener("message", (e) => strayMessages.push(e.data));
+
+      // 1. Synthetic (untrusted) focus and click on the password field must do nothing.
+      window.addEventListener("load", () => {
+        for (const type of ["focus", "focusin", "click", "pointerdown", "keydown"]) {
+          pass.dispatchEvent(new Event(type, { bubbles: true }));
+          user.dispatchEvent(new Event(type, { bubbles: true }));
+        }
+        pass.focus(); // programmatic focus before any user gesture
+        setTimeout(() => {
+          const frames = document.querySelectorAll("iframe");
+          frames.length === 0
+            ? report(
+                "pass",
+                "untrusted events and scripted focus did not open the suggestion frame"
+              )
+            : report("fail", "suggestion frame appeared without a trusted user gesture");
+        }, 1500);
+      });
+
+      // 2. When the frame does appear (after a real click), attack it.
+      new MutationObserver((records) => {
+        for (const r of records)
+          for (const n of r.addedNodes) {
+            if (n.nodeName === "IFRAME" && !frameSeen) {
+              frameSeen = n;
+              attack(n);
+            }
+          }
+      }).observe(document.documentElement, { childList: true, subtree: true });
+
+      function attack(frame) {
+        report("info", "frame element observed (page can see that it exists)");
+
+        // 2a. Racing forged channel: spam inits with our own port and a guessed nonce.
+        const forged = new MessageChannel();
+        let leaked = [];
+        forged.port1.onmessage = (e) => leaked.push(e.data);
+        let spam = setInterval(() => {
+          try {
+            frame.contentWindow.postMessage({ type: "pm-init", nonce: crypto.randomUUID() }, "*", [
+              new MessageChannel().port2,
+            ]);
+          } catch {}
+        }, 2);
+        // also hand it our port once, as an attacker would
+        try {
+          frame.contentWindow.postMessage({ type: "pm-init", nonce: crypto.randomUUID() }, "*", [
+            forged.port2,
+          ]);
+        } catch {}
+
+        setTimeout(() => {
+          clearInterval(spam);
+          leaked.length === 0
+            ? report("pass", "forged MessagePort received nothing from the suggestion frame")
+            : report("fail", "forged port received " + JSON.stringify(leaked));
+          strayMessages.length === 0
+            ? report("pass", "no window.postMessage traffic from the extension reached the page")
+            : report("fail", "page window received " + JSON.stringify(strayMessages));
+        }, 3000);
+
+        // 2b. Reading the frame's DOM.
+        let doc = null;
+        try {
+          doc = frame.contentDocument;
+        } catch {}
+        let doc2 = null;
+        try {
+          doc2 = frame.contentWindow.document;
+        } catch {}
+        doc === null && doc2 === null
+          ? report("pass", "frame DOM is not readable (cross-origin)")
+          : report("fail", "frame DOM readable");
+
+        // 2c. Forged "select" messages and synthetic clicks on the frame must not fill.
+        try {
+          frame.contentWindow.postMessage({ type: "select", id: "x" }, "*");
+        } catch {}
+        frame.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+        frame.click();
+        setTimeout(() => {
+          if (!userClicked) {
+            pass.value === "" && user.value === ""
+              ? report("pass", "forged select/click did not fill the form")
+              : report("fail", "form was filled without a user click: " + user.value);
+          }
+        }, 1000);
+      }
+
+      // 3. Poll: before the user clicks a suggestion, the fields must stay empty.
+      const poll = setInterval(() => {
+        if ((pass.value !== "" || user.value !== "") && !userClicked) {
+          report("fail", "credentials appeared before any user action");
+          clearInterval(poll);
+        }
+      }, 100);
+      // A real click on our own fields counts as user action, not as the suggestion click.
+      user.addEventListener("pointerdown", (e) => {
+        if (e.isTrusted) userClicked = false;
+      });
+      pass.addEventListener("input", () => {
+        if (pass.value !== "") {
+          userClicked = true;
+          report(
+            "info",
+            "password field filled after your click (expected: page sees filled values)"
+          );
+          clearInterval(poll);
+        }
+      });
+    </script>
+  </body>
+</html>

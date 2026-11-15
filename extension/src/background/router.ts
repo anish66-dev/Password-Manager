@@ -6,8 +6,13 @@ import {
   MIN_MASTER_PASSWORD_LENGTH,
   VaultCryptoError,
   VaultError,
-  isExtensionPageOnlyMessage,
+  type MatchOptions,
+  type Suggestion,
+  allowedSenderKind,
   isValidExtensionMessage,
+  matchesPage,
+  pageSiteKey,
+  recordSiteKey,
 } from "@password-manager/shared";
 import { ServiceError, type VaultService } from "./vault-service.js";
 
@@ -20,8 +25,31 @@ export interface SenderInfo {
   url?: string;
   /** True only for pages of this extension (popup). */
   isExtensionPage: boolean;
-  /** True when the sender is a content script running in a tab. */
+  /** True when the sender is a content script in the top frame of a tab. */
   isContentScript: boolean;
+  /** True when the sender is our own suggestion iframe embedded in a page. */
+  isSuggestionFrame: boolean;
+  /** Tab of the sender, as reported by the browser. */
+  tabId?: number;
+}
+
+export interface RouterDeps {
+  service: VaultService;
+  /** Development builds only: lets localhost pages match. */
+  allowLocalhost: boolean;
+  /** One pending iframe-authentication nonce per tab. Memory only. */
+  frameNonces: Map<number, string>;
+}
+
+function senderMatches(kind: string, sender: SenderInfo): boolean {
+  switch (kind) {
+    case "extension-page":
+      return sender.isExtensionPage;
+    case "content-script":
+      return sender.isContentScript;
+    default:
+      return sender.isSuggestionFrame;
+  }
 }
 
 function summarize(entry: LoginEntry): LoginSummary {
@@ -48,14 +76,16 @@ function fail(error: string): ExtensionResponse<never> {
 export async function handleExtensionMessage(
   rawMessage: unknown,
   sender: SenderInfo,
-  service: VaultService
+  deps: RouterDeps
 ): Promise<ExtensionResponse<unknown>> {
+  const { service } = deps;
+  const matchOptions: MatchOptions = { allowLocalhost: deps.allowLocalhost };
   if (!isValidExtensionMessage(rawMessage)) {
     return fail("Invalid message payload or unrecognized message type at boundary.");
   }
   const message = rawMessage;
 
-  if (isExtensionPageOnlyMessage(message) ? !sender.isExtensionPage : !sender.isContentScript) {
+  if (!senderMatches(allowedSenderKind(message), sender)) {
     return fail("This message is not allowed from this context.");
   }
 
@@ -84,6 +114,54 @@ export async function handleExtensionMessage(
             timestamp: new Date().toISOString(),
           },
         };
+      }
+
+      case "LOGIN_FIELD_FOCUSED": {
+        // The page is identified only by the browser-provided sender URL.
+        const pageUrl = sender.url;
+        const none = (state: "ineligible" | "uninitialized" | "locked") => ({
+          ok: true as const,
+          data: { state, suggestions: [] as Suggestion[] },
+        });
+        if (!pageUrl || pageSiteKey(pageUrl, matchOptions) === null) return none("ineligible");
+        const status = await service.getStatus();
+        if (status === "uninitialized") return none("uninitialized");
+        if (status === "locked") return none("locked");
+        const vault = await service.requireVault();
+        const suggestions: Suggestion[] = (await vault.list())
+          .filter((entry) => matchesPage(entry.url, pageUrl, matchOptions))
+          .map((entry) => ({
+            id: entry.id,
+            username: entry.username,
+            displayDomain: recordSiteKey(entry.url, matchOptions) ?? "",
+          }));
+        return { ok: true, data: { state: "ready", suggestions } };
+      }
+
+      case "FILL_REQUEST": {
+        const pageUrl = sender.url;
+        const vault = await service.requireVault();
+        const entry = await vault.get(message.payload.id);
+        // Re-check the origin against the chosen record before releasing any secret.
+        if (!pageUrl || !matchesPage(entry.url, pageUrl, matchOptions)) {
+          return fail("No matching login for this site.");
+        }
+        return { ok: true, data: { username: entry.username, password: entry.password } };
+      }
+
+      case "FRAME_REGISTER": {
+        if (sender.tabId === undefined) return fail("Frame not authorized.");
+        deps.frameNonces.set(sender.tabId, message.payload.nonce);
+        return { ok: true, data: { done: true } };
+      }
+
+      case "FRAME_CLAIM": {
+        const tabId = sender.tabId;
+        if (tabId === undefined || deps.frameNonces.get(tabId) !== message.payload.nonce) {
+          return fail("Frame not authorized.");
+        }
+        deps.frameNonces.delete(tabId);
+        return { ok: true, data: { done: true } };
       }
 
       case "VAULT_CREATE":

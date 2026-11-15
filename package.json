@@ -14,12 +14,15 @@
     "test:watch": "vitest",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "build:dev-localhost": "npm run typecheck && npm run build:dev-localhost --workspace=extension",
+    "serve:test-pages": "node test-pages/serve.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.21.0",
     "eslint": "^9.21.0",
     "fake-indexeddb": "^6.2.8",
+    "jsdom": "^29.1.1",
     "prettier": "^3.5.3",
     "typescript": "^5.7.3",
     "typescript-eslint": "^8.26.0",

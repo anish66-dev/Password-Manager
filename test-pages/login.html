@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Plain login form</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        max-width: 420px;
+        margin: 3rem auto;
+      }
+      label {
+        display: block;
+        margin: 0.75rem 0 0.25rem;
+      }
+      input {
+        width: 100%;
+        padding: 0.5rem;
+        box-sizing: border-box;
+      }
+      .honeypot {
+        position: absolute;
+        left: -9999px;
+      }
+      .tiny {
+        width: 1px;
+        height: 1px;
+        opacity: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Sign in</h1>
+    <form action="/login.html" method="get">
+      <!-- Honeypots: must never be offered suggestions or filled. -->
+      <input class="honeypot" type="text" name="email_confirm" autocomplete="off" tabindex="-1" />
+      <input class="tiny" type="password" name="trap" tabindex="-1" />
+
+      <label for="user">Email or username</label>
+      <input id="user" name="username" type="text" autocomplete="username" />
+
+      <label for="pass">Password</label>
+      <input id="pass" name="password" type="password" autocomplete="current-password" />
+
+      <p><button type="submit">Sign in</button></p>
+    </form>
+    <p>
+      <small>
+        Expected: nothing on load. Click or Tab into a field and a suggestion box appears; filling
+        happens only after you click a suggestion.
+      </small>
+    </p>
+  </body>
+</html>

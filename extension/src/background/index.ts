@@ -1,9 +1,11 @@
 import { IndexedDbLocalStore } from "../storage/indexeddb-store.js";
 import { chromeLocalStore, chromeSessionStore } from "../storage/key-value.js";
-import { handleExtensionMessage, type SenderInfo } from "./router.js";
+import { handleExtensionMessage, type RouterDeps, type SenderInfo } from "./router.js";
 import { VaultService } from "./vault-service.js";
 
 const AUTOLOCK_ALARM = "autolock-check";
+
+declare const __ALLOW_LOCALHOST__: boolean | undefined;
 
 const service = new VaultService({
   store: new IndexedDbLocalStore(),
@@ -11,21 +13,40 @@ const service = new VaultService({
   settings: chromeLocalStore,
 });
 
+const deps: RouterDeps = {
+  service,
+  // Replaced at build time. True only for the dev-localhost build.
+  allowLocalhost: typeof __ALLOW_LOCALHOST__ !== "undefined" && __ALLOW_LOCALHOST__ === true,
+  frameNonces: new Map(),
+};
+
 /** Builds sender facts from the browser's `sender`, never from message contents. */
 function describeSender(sender: chrome.runtime.MessageSender): SenderInfo {
-  const extensionOrigin = chrome.runtime.getURL("");
-  const isExtensionPage =
-    sender.id === chrome.runtime.id &&
-    sender.tab === undefined &&
-    typeof sender.url === "string" &&
-    sender.url.startsWith(extensionOrigin);
+  const ours = sender.id === chrome.runtime.id;
+  const fromExtensionUrl =
+    ours && typeof sender.url === "string" && sender.url.startsWith(chrome.runtime.getURL(""));
+  // Our own suggestion iframe, embedded in a web page (never the top frame).
+  const isSuggestionFrame =
+    fromExtensionUrl &&
+    sender.tab !== undefined &&
+    (sender.frameId ?? 0) !== 0 &&
+    (sender.url as string).startsWith(chrome.runtime.getURL("suggestions.html"));
+  // Popup or other extension page. Pages cannot frame these (not web-accessible).
+  const isExtensionPage = fromExtensionUrl && !isSuggestionFrame;
+  // Content scripts only run in the top frame (frameId 0) of http(s) pages.
   const isContentScript =
-    !isExtensionPage && sender.id === chrome.runtime.id && sender.tab !== undefined;
-  return { url: sender.url, isExtensionPage, isContentScript };
+    ours && !fromExtensionUrl && sender.tab !== undefined && sender.frameId === 0;
+  return {
+    url: sender.url,
+    isExtensionPage,
+    isContentScript,
+    isSuggestionFrame,
+    tabId: sender.tab?.id,
+  };
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  handleExtensionMessage(message, describeSender(sender), service)
+  handleExtensionMessage(message, describeSender(sender), deps)
     .then((response) => sendResponse(response))
     .catch(() => {
       // Generic message only: internal errors must never leak details to callers.

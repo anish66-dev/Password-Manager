@@ -24,11 +24,27 @@ export type ExtensionMessage =
   | { type: "VAULT_UPDATE"; payload: LoginFields & { id: string } }
   | { type: "VAULT_DELETE"; payload: { id: string } }
   | { type: "VAULT_CHANGE_PASSWORD"; payload: { currentPassword: string; newPassword: string } }
-  | { type: "VAULT_SET_AUTOLOCK"; payload: { minutes: number } };
+  | { type: "VAULT_SET_AUTOLOCK"; payload: { minutes: number } }
+  | { type: "LOGIN_FIELD_FOCUSED" }
+  | { type: "FILL_REQUEST"; payload: { id: string } }
+  | { type: "FRAME_REGISTER"; payload: { nonce: string } }
+  | { type: "FRAME_CLAIM"; payload: { nonce: string } };
 
-/** Message types that only extension pages (the popup) may send. */
-export function isExtensionPageOnlyMessage(msg: ExtensionMessage): boolean {
-  return msg.type !== "CONTENT_SCRIPT_PING";
+export type SenderKind = "extension-page" | "content-script" | "suggestion-frame";
+
+/** Which kind of sender may send each message type. Enforced by the service worker. */
+export function allowedSenderKind(msg: ExtensionMessage): SenderKind {
+  switch (msg.type) {
+    case "CONTENT_SCRIPT_PING":
+    case "LOGIN_FIELD_FOCUSED":
+    case "FILL_REQUEST":
+    case "FRAME_REGISTER":
+      return "content-script";
+    case "FRAME_CLAIM":
+      return "suggestion-frame";
+    default:
+      return "extension-page";
+  }
 }
 
 export interface PopupStatusResponseData {
@@ -67,6 +83,26 @@ export interface VaultEntryResponseData {
   entry: LoginDetail;
 }
 
+/** A saved login offered on a page. Never contains the password. */
+export interface Suggestion {
+  id: string;
+  username: string;
+  /** Registrable domain of the saved login, for display. */
+  displayDomain: string;
+}
+
+export type FocusState = "ineligible" | "uninitialized" | "locked" | "ready";
+
+export interface FocusResponseData {
+  state: FocusState;
+  suggestions: Suggestion[];
+}
+
+export interface FillResponseData {
+  username: string;
+  password: string;
+}
+
 export interface DoneResponseData {
   done: true;
 }
@@ -82,6 +118,10 @@ function isObject(value: unknown): value is Record<string, unknown> {
 
 function isBoundedString(value: unknown, min = 0): value is string {
   return typeof value === "string" && value.length >= min && value.length <= MAX_FIELD_LENGTH;
+}
+
+function isUuidLike(value: unknown): value is string {
+  return typeof value === "string" && /^[0-9a-f-]{36}$/i.test(value);
 }
 
 function isLoginFields(payload: Record<string, unknown>): boolean {
@@ -135,6 +175,13 @@ export function isValidExtensionMessage(msg: unknown): msg is ExtensionMessage {
       );
     case "VAULT_SET_AUTOLOCK":
       return isObject(payload) && isValidAutoLockMinutes(payload["minutes"]);
+    case "LOGIN_FIELD_FOCUSED":
+      return true;
+    case "FILL_REQUEST":
+      return isObject(payload) && isBoundedString(payload["id"], 1);
+    case "FRAME_REGISTER":
+    case "FRAME_CLAIM":
+      return isObject(payload) && isUuidLike(payload["nonce"]);
     default:
       return false;
   }
@@ -207,4 +254,31 @@ export function isVaultEntryData(data: unknown): data is VaultEntryResponseData 
 
 export function isDoneData(data: unknown): data is DoneResponseData {
   return isObject(data) && data["done"] === true;
+}
+
+function isSuggestion(value: unknown): value is Suggestion {
+  return (
+    isObject(value) &&
+    typeof value["id"] === "string" &&
+    typeof value["username"] === "string" &&
+    typeof value["displayDomain"] === "string"
+  );
+}
+
+export function isFocusData(data: unknown): data is FocusResponseData {
+  return (
+    isObject(data) &&
+    (data["state"] === "ineligible" ||
+      data["state"] === "uninitialized" ||
+      data["state"] === "locked" ||
+      data["state"] === "ready") &&
+    Array.isArray(data["suggestions"]) &&
+    data["suggestions"].every(isSuggestion)
+  );
+}
+
+export function isFillData(data: unknown): data is FillResponseData {
+  return (
+    isObject(data) && typeof data["username"] === "string" && typeof data["password"] === "string"
+  );
 }

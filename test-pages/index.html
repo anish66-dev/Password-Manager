@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Password manager test pages</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        max-width: 640px;
+        margin: 2rem auto;
+        line-height: 1.5;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Test pages</h1>
+    <p>
+      Use the <code>dev-localhost</code> build and save a login whose site is
+      <code>http://localhost</code> (see the README, "Testing autofill").
+    </p>
+    <ul>
+      <li><a href="/login.html">Plain login form</a></li>
+      <li>
+        <a href="/dynamic.html">JavaScript-rendered form (controlled inputs, late second form)</a>
+      </li>
+      <li><a href="/hostile.html">Hostile page (tries to read or trigger the suggestion UI)</a></li>
+    </ul>
+  </body>
+</html>

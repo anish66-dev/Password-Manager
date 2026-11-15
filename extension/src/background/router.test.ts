@@ -12,20 +12,25 @@ const popup: SenderInfo = {
   url: "chrome-extension://abc/popup.html",
   isExtensionPage: true,
   isContentScript: false,
+  isSuggestionFrame: false,
 };
 const tab: SenderInfo = {
   url: "https://example.com/login",
   isExtensionPage: false,
   isContentScript: true,
+  isSuggestionFrame: false,
+  tabId: 1,
 };
 
 let service: VaultService;
+let frameNonces: Map<number, string>;
 
 function send(message: unknown, sender: SenderInfo = popup) {
-  return handleExtensionMessage(message, sender, service);
+  return handleExtensionMessage(message, sender, { service, allowLocalhost: false, frameNonces });
 }
 
 beforeEach(() => {
+  frameNonces = new Map();
   service = new VaultService({
     store: new InMemoryLocalStore(),
     session: new MemoryKeyValueStore(),

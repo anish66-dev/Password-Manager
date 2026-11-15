@@ -22,6 +22,12 @@ export default tsPlugin.config(
     },
   },
   {
+    files: ["test-pages/**/*.mjs"],
+    languageOptions: {
+      globals: { process: "readonly", URL: "readonly", console: "readonly" },
+    },
+  },
+  {
     files: ["shared/src/**/*.ts"],
     rules: {
       "no-restricted-globals": [
