@@ -2,6 +2,7 @@ import { IndexedDbLocalStore } from "../storage/indexeddb-store.js";
 import { chromeLocalStore, chromeSessionStore } from "../storage/key-value.js";
 import { handleExtensionMessage, type RouterDeps, type SenderInfo } from "./router.js";
 import { VaultService } from "./vault-service.js";
+import { PendingCaptures } from "./capture-flow.js";
 
 const AUTOLOCK_ALARM = "autolock-check";
 
@@ -13,8 +14,19 @@ const service = new VaultService({
   settings: chromeLocalStore,
 });
 
+const captures = new PendingCaptures();
+
+/** Tells tabs with a waiting save prompt to look again, for example after an unlock. */
+function notifyPendingTabs(): void {
+  for (const tabId of captures.tabIds()) {
+    chrome.tabs.sendMessage(tabId, { type: "PENDING_CAPTURE_AVAILABLE" }).catch(() => undefined);
+  }
+}
+
 const deps: RouterDeps = {
   service,
+  captures,
+  onUnlocked: notifyPendingTabs,
   // Replaced at build time. True only for the dev-localhost build.
   allowLocalhost: typeof __ALLOW_LOCALHOST__ !== "undefined" && __ALLOW_LOCALHOST__ === true,
   frameNonces: new Map(),
@@ -56,6 +68,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // Return true to indicate asynchronous response to sendResponse
   return true;
 });
+
+// A closed tab never gets its pending capture back.
+chrome.tabs.onRemoved.addListener((tabId) => captures.delete(tabId));
 
 // A fresh browser session or a reloaded extension always starts locked.
 chrome.runtime.onStartup.addListener(() => {

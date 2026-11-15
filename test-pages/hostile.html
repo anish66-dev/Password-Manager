@@ -107,6 +107,26 @@
         }, 1500);
       });
 
+      // 1b. Script-built registration form submitted without any user gesture must not prompt.
+      window.addEventListener("load", () => {
+        const form = document.createElement("form");
+        form.innerHTML =
+          '<input type="email" value="victim@example.com">' +
+          '<input type="password" autocomplete="new-password" value="page-chosen-secret">' +
+          '<input type="password" value="page-chosen-secret">';
+        form.addEventListener("submit", (e) => e.preventDefault());
+        document.body.appendChild(form);
+        form.requestSubmit();
+        form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+        setTimeout(() => {
+          form.remove();
+          if (gestured) return;
+          document.querySelectorAll("iframe").length === 0
+            ? report("pass", "script-submitted registration form did not produce a save prompt")
+            : report("fail", "save prompt appeared for a form submitted without a user gesture");
+        }, 1500);
+      });
+
       // 2. When the frame does appear (after a real click), attack it.
       new MutationObserver((records) => {
         for (const r of records)

@@ -28,7 +28,21 @@ export type ExtensionMessage =
   | { type: "LOGIN_FIELD_FOCUSED" }
   | { type: "FILL_REQUEST"; payload: { id: string } }
   | { type: "FRAME_REGISTER"; payload: { nonce: string } }
-  | { type: "FRAME_CLAIM"; payload: { nonce: string } };
+  | { type: "FRAME_CLAIM"; payload: { nonce: string } }
+  | { type: "CREDENTIAL_CAPTURED"; payload: CapturedCredentials }
+  | { type: "PENDING_CAPTURE_GET" }
+  | { type: "CAPTURE_DECISION"; payload: { decision: CaptureDecision } };
+
+export type CaptureKind = "register" | "change";
+
+/** What the user's decision on a save/update prompt means. The worker picks add vs update. */
+export type CaptureDecision = "accept" | "never" | "dismiss";
+
+export interface CapturedCredentials {
+  kind: CaptureKind;
+  username: string;
+  password: string;
+}
 
 export type SenderKind = "extension-page" | "content-script" | "suggestion-frame";
 
@@ -39,6 +53,9 @@ export function allowedSenderKind(msg: ExtensionMessage): SenderKind {
     case "LOGIN_FIELD_FOCUSED":
     case "FILL_REQUEST":
     case "FRAME_REGISTER":
+    case "CREDENTIAL_CAPTURED":
+    case "PENDING_CAPTURE_GET":
+    case "CAPTURE_DECISION":
       return "content-script";
     case "FRAME_CLAIM":
       return "suggestion-frame";
@@ -101,6 +118,22 @@ export interface FocusResponseData {
 export interface FillResponseData {
   username: string;
   password: string;
+}
+
+/**
+ * What the save/update prompt shows. The password itself never leaves the service worker:
+ * the prompt only gets its length so it can draw masked dots.
+ */
+export interface CapturePrompt {
+  mode: "save" | "update" | "unlock";
+  /** Registrable domain, for display. */
+  site: string;
+  username: string;
+  passwordLength: number;
+}
+
+export interface CapturePromptResponseData {
+  prompt: CapturePrompt | null;
 }
 
 export interface DoneResponseData {
@@ -182,6 +215,22 @@ export function isValidExtensionMessage(msg: unknown): msg is ExtensionMessage {
     case "FRAME_REGISTER":
     case "FRAME_CLAIM":
       return isObject(payload) && isUuidLike(payload["nonce"]);
+    case "PENDING_CAPTURE_GET":
+      return true;
+    case "CREDENTIAL_CAPTURED":
+      return (
+        isObject(payload) &&
+        (payload["kind"] === "register" || payload["kind"] === "change") &&
+        isBoundedString(payload["username"]) &&
+        isBoundedString(payload["password"], 1)
+      );
+    case "CAPTURE_DECISION":
+      return (
+        isObject(payload) &&
+        (payload["decision"] === "accept" ||
+          payload["decision"] === "never" ||
+          payload["decision"] === "dismiss")
+      );
     default:
       return false;
   }
@@ -281,4 +330,18 @@ export function isFillData(data: unknown): data is FillResponseData {
   return (
     isObject(data) && typeof data["username"] === "string" && typeof data["password"] === "string"
   );
+}
+
+export function isCapturePrompt(value: unknown): value is CapturePrompt {
+  return (
+    isObject(value) &&
+    (value["mode"] === "save" || value["mode"] === "update" || value["mode"] === "unlock") &&
+    typeof value["site"] === "string" &&
+    typeof value["username"] === "string" &&
+    typeof value["passwordLength"] === "number"
+  );
+}
+
+export function isCapturePromptData(data: unknown): data is CapturePromptResponseData {
+  return isObject(data) && (data["prompt"] === null || isCapturePrompt(data["prompt"]));
 }

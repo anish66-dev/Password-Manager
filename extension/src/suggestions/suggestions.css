@@ -73,3 +73,57 @@ body {
   color: #64748b;
   font-size: 12px;
 }
+
+.details {
+  padding: 2px 12px 8px;
+}
+
+.details .site {
+  font-weight: 600;
+}
+
+.details .dots {
+  margin-top: 2px;
+  letter-spacing: 2px;
+  color: #475569;
+}
+
+.actions {
+  display: flex;
+  gap: 6px;
+  padding: 4px 12px 12px;
+}
+
+.actions button {
+  font: inherit;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+.actions .primary {
+  background: #2563eb;
+  color: #ffffff;
+}
+
+.actions .primary:hover {
+  background: #1d4ed8;
+}
+
+.actions .secondary {
+  background: #ffffff;
+  color: #0f172a;
+  border-color: #cbd5e1;
+}
+
+.actions .ghost {
+  background: transparent;
+  color: #64748b;
+  margin-left: auto;
+}
+
+.actions button:focus-visible {
+  outline: 2px solid #93c5fd;
+  outline-offset: 1px;
+}

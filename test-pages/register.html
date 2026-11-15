@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Create account</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        max-width: 420px;
+        margin: 3rem auto;
+      }
+      label {
+        display: block;
+        margin: 0.75rem 0 0.25rem;
+      }
+      input {
+        width: 100%;
+        padding: 0.5rem;
+        box-sizing: border-box;
+      }
+      #js-form {
+        margin-top: 3rem;
+        border-top: 1px solid #cbd5e1;
+        padding-top: 1rem;
+      }
+      #status {
+        background: #f1f5f9;
+        padding: 0.5rem;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Create account</h1>
+    <p>
+      The first form posts and redirects to a welcome page, so the save prompt should appear on the
+      next page. The second form never submits anything: a script handles its button.
+    </p>
+
+    <form action="/register" method="post">
+      <label for="email">Email</label>
+      <input id="email" name="email" type="email" autocomplete="email" required />
+
+      <label for="pw">Password</label>
+      <input id="pw" name="password" type="password" autocomplete="new-password" required />
+
+      <label for="pw2">Confirm password</label>
+      <input
+        id="pw2"
+        name="confirm_password"
+        type="password"
+        autocomplete="new-password"
+        required
+      />
+
+      <p><button type="submit">Create account</button></p>
+    </form>
+
+    <div id="js-form">
+      <h2>Script-driven sign up (no submit event)</h2>
+      <label for="jemail">Email</label>
+      <input id="jemail" type="email" autocomplete="email" />
+      <label for="jpw">Password</label>
+      <input id="jpw" type="password" autocomplete="new-password" />
+      <label for="jpw2">Confirm password</label>
+      <input id="jpw2" type="password" />
+      <p><button id="jgo" type="button">Sign up</button></p>
+      <div id="status">Nothing submitted.</div>
+    </div>
+
+    <script>
+      document.getElementById("jgo").addEventListener("click", () => {
+        document.getElementById("status").textContent =
+          "Script handled the sign up (no navigation).";
+      });
+    </script>
+  </body>
+</html>

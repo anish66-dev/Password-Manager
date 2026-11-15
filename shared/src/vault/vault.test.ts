@@ -150,3 +150,26 @@ describe("master password change", () => {
     expect((await store.getHeader())?.header_version).toBe(1);
   });
 });
+
+describe("never-save sites", () => {
+  it("stores domains as encrypted records that do not show up as logins", async () => {
+    const { store, vault } = await newVault();
+    expect(await vault.readNeverSave()).toEqual([]);
+
+    await vault.addNeverSave("Example.com");
+    await vault.addNeverSave("example.com"); // no duplicate
+    await vault.addNeverSave("other.org");
+
+    expect((await vault.readNeverSave()).sort()).toEqual(["example.com", "other.org"]);
+    expect(await vault.list()).toEqual([]);
+    expect((await vault.readAll()).rejectedIds).toEqual([]);
+
+    const serialized = JSON.stringify(await store.listRecords());
+    expect(serialized).not.toContain("example.com");
+    expect(serialized).not.toContain("other.org");
+
+    const reopened = await unlock(PASSWORD, store, options);
+    expect((await reopened.readNeverSave()).sort()).toEqual(["example.com", "other.org"]);
+    await expect(vault.addNeverSave("  ")).rejects.toThrow(VaultCryptoError);
+  });
+});

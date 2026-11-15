@@ -6,6 +6,7 @@ import {
 } from "@password-manager/shared";
 import { handleExtensionMessage, type RouterDeps, type SenderInfo } from "./router.js";
 import { VaultService } from "./vault-service.js";
+import { PendingCaptures } from "./capture-flow.js";
 import { MemoryKeyValueStore } from "../storage/key-value.js";
 
 const MASTER = "a-long-master-password";
@@ -54,7 +55,12 @@ beforeEach(async () => {
     settings: new MemoryKeyValueStore(),
     kdf: { memory_kib: 64, iterations: 1, parallelism: 1 },
   });
-  deps = { service, allowLocalhost: false, frameNonces: new Map() };
+  deps = {
+    service,
+    allowLocalhost: false,
+    frameNonces: new Map(),
+    captures: new PendingCaptures(),
+  };
 });
 
 describe("suggestions on field focus", () => {

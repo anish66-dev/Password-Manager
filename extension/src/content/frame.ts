@@ -1,4 +1,6 @@
 import {
+  type CaptureDecision,
+  type CapturePrompt,
   type FocusState,
   type Suggestion,
   isDoneData,
@@ -9,9 +11,12 @@ import { type FrameInit, type ToFrame, isFromFrame } from "./frame-protocol.js";
 export interface FrameHandlers {
   onSelect(id: string): void;
   onDismiss(): void;
+  onDecision(decision: CaptureDecision): void;
 }
 
 const FRAME_WIDTH = 280;
+const PROMPT_WIDTH = 320;
+const PROMPT_MARGIN = 12;
 const READY_TIMEOUT_MS = 3000;
 
 /**
@@ -26,6 +31,7 @@ export class SuggestionFrame {
   private anchor: HTMLElement | null = null;
   private offered = new Set<string>();
   private visible = false;
+  private mode: "suggest" | "prompt" = "suggest";
 
   constructor(
     private readonly doc: Document,
@@ -37,8 +43,27 @@ export class SuggestionFrame {
     return node !== null && node === this.iframe;
   }
 
-  async show(anchor: HTMLElement, state: FocusState, suggestions: Suggestion[]): Promise<void> {
+  /** True while a save/update prompt is on screen. It takes priority over suggestions. */
+  isPromptShowing(): boolean {
+    return this.mode === "prompt";
+  }
+
+  /** Shows a save/update prompt in the top-right corner of the page. */
+  async showPrompt(prompt: CapturePrompt): Promise<void> {
     const port = await this.ensure();
+    this.mode = "prompt";
+    this.anchor = null;
+    this.offered = new Set();
+    this.setStyle("width", `${PROMPT_WIDTH}px`);
+    const message: ToFrame = { type: "prompt", prompt };
+    port.postMessage(message);
+  }
+
+  async show(anchor: HTMLElement, state: FocusState, suggestions: Suggestion[]): Promise<void> {
+    if (this.mode === "prompt") return;
+    const port = await this.ensure();
+    if (this.isPromptShowing()) return; // A prompt appeared while the frame was loading.
+    this.setStyle("width", `${FRAME_WIDTH}px`);
     this.anchor = anchor;
     this.offered = new Set(suggestions.map((s) => s.id));
     const message: ToFrame = { type: "render", state, suggestions };
@@ -51,6 +76,7 @@ export class SuggestionFrame {
   }
 
   hide(): void {
+    this.mode = "suggest";
     this.visible = false;
     this.anchor = null;
     this.offered = new Set();
@@ -80,6 +106,14 @@ export class SuggestionFrame {
   }
 
   reposition(): void {
+    if (this.iframe && this.mode === "prompt" && this.visible) {
+      const view = this.doc.defaultView;
+      if (!view) return;
+      const left = Math.max(PROMPT_MARGIN, view.innerWidth - PROMPT_WIDTH - PROMPT_MARGIN);
+      this.setStyle("left", `${left}px`);
+      this.setStyle("top", `${PROMPT_MARGIN}px`);
+      return;
+    }
     if (!this.iframe || !this.anchor || !this.visible) return;
     if (!this.anchor.isConnected) {
       this.hide();
@@ -105,6 +139,7 @@ export class SuggestionFrame {
     this.iframe?.remove();
     this.iframe = null;
     this.visible = false;
+    this.mode = "suggest";
   }
 
   private ensure(): Promise<MessagePort> {
@@ -176,7 +211,7 @@ export class SuggestionFrame {
             resolve();
             break;
           case "size":
-            if (data.height > 0 && this.anchor) {
+            if (data.height > 0 && (this.anchor || this.mode === "prompt")) {
               this.visible = true;
               this.applyShown(data.height);
               this.reposition();
@@ -190,6 +225,9 @@ export class SuggestionFrame {
             break;
           case "dismiss":
             this.handlers.onDismiss();
+            break;
+          case "decision":
+            this.handlers.onDecision(data.decision);
             break;
         }
       };

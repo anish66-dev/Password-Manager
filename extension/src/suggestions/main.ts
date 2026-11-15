@@ -1,5 +1,11 @@
 import "./suggestions.css";
-import { isDoneData, isValidExtensionResponse, type FocusState } from "@password-manager/shared";
+import {
+  isDoneData,
+  isValidExtensionResponse,
+  type CaptureDecision,
+  type CapturePrompt,
+  type FocusState,
+} from "@password-manager/shared";
 import { type FromFrame, isFrameInit, isToFrame } from "../content/frame-protocol.js";
 import { type Suggestion } from "@password-manager/shared";
 
@@ -58,6 +64,66 @@ function render(state: FocusState, suggestions: Suggestion[]): void {
   setTimeout(reportSize, 60);
 }
 
+function actionButton(label: string, className: string, decision: CaptureDecision): HTMLElement {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = className;
+  button.textContent = label;
+  button.addEventListener("click", (event) => {
+    // Synthetic clicks (for example from page script) never count as a decision.
+    if (!event.isTrusted) return;
+    send({ type: "decision", decision });
+  });
+  return button;
+}
+
+/** The save/update prompt. The password is only ever shown as dots. */
+function renderPrompt(prompt: CapturePrompt): void {
+  card.replaceChildren();
+  const title =
+    prompt.mode === "update"
+      ? "Update password?"
+      : prompt.mode === "unlock"
+        ? "Unlock to save"
+        : "Save password?";
+
+  const details = document.createElement("div");
+  details.className = "details";
+  details.append(
+    textElement("div", "site", prompt.site),
+    textElement("div", "user", prompt.username || "(no username)"),
+    textElement("div", "dots", "\u2022".repeat(Math.min(Math.max(prompt.passwordLength, 1), 16)))
+  );
+
+  const actions = document.createElement("div");
+  actions.className = "actions";
+  if (prompt.mode === "unlock") {
+    actions.append(actionButton("Not now", "secondary", "dismiss"));
+  } else {
+    actions.append(
+      actionButton(prompt.mode === "update" ? "Update" : "Save", "primary", "accept"),
+      actionButton("Never", "secondary", "never"),
+      actionButton("Not now", "ghost", "dismiss")
+    );
+  }
+
+  card.append(textElement("p", "title", title), details);
+  if (prompt.mode === "unlock") {
+    card.append(
+      textElement(
+        "p",
+        "note",
+        "Open the extension and unlock your vault. This stays available for about a minute."
+      )
+    );
+  }
+  card.append(actions);
+
+  const reportSize = (): void => send({ type: "size", height: Math.ceil(card.scrollHeight) + 2 });
+  setTimeout(reportSize, 0);
+  setTimeout(reportSize, 60);
+}
+
 document.addEventListener("keydown", (event) => {
   if (event.isTrusted && event.key === "Escape") send({ type: "dismiss" });
 });
@@ -78,7 +144,10 @@ window.addEventListener("message", (event: MessageEvent<unknown>) => {
       if (port || !isValidExtensionResponse(reply, isDoneData) || !reply.ok) return;
       port = candidate;
       port.onmessage = (message: MessageEvent<unknown>) => {
-        if (isToFrame(message.data)) render(message.data.state, message.data.suggestions);
+        const data = message.data;
+        if (!isToFrame(data)) return;
+        if (data.type === "prompt") renderPrompt(data.prompt);
+        else render(data.state, data.suggestions);
       };
       send({ type: "ready" });
     },

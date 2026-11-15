@@ -14,7 +14,8 @@ import {
   pageSiteKey,
   recordSiteKey,
 } from "@password-manager/shared";
-import { ServiceError, type VaultService } from "./vault-service.js";
+import { ServiceError } from "./vault-service.js";
+import { type CaptureDeps, applyDecision, resolvePrompt } from "./capture-flow.js";
 
 export const APP_NAME = "Personal Password Manager";
 export const APP_VERSION = "0.1.0";
@@ -33,12 +34,11 @@ export interface SenderInfo {
   tabId?: number;
 }
 
-export interface RouterDeps {
-  service: VaultService;
-  /** Development builds only: lets localhost pages match. */
-  allowLocalhost: boolean;
+export interface RouterDeps extends CaptureDeps {
   /** One pending iframe-authentication nonce per tab. Memory only. */
   frameNonces: Map<number, string>;
+  /** Called after the vault is created or unlocked, so tabs can retry a waiting prompt. */
+  onUnlocked?: () => void;
 }
 
 function senderMatches(kind: string, sender: SenderInfo): boolean {
@@ -164,12 +164,41 @@ export async function handleExtensionMessage(
         return { ok: true, data: { done: true } };
       }
 
+      case "CREDENTIAL_CAPTURED": {
+        const tabId = sender.tabId;
+        const pageUrl = sender.url;
+        // Only https pages (or localhost in dev builds) are ever offered a save prompt.
+        if (tabId === undefined || !pageUrl || pageSiteKey(pageUrl, matchOptions) === null) {
+          return { ok: true, data: { prompt: null } };
+        }
+        deps.captures.set(tabId, { url: pageUrl, ...message.payload });
+        return { ok: true, data: { prompt: await resolvePrompt(deps, tabId, pageUrl) } };
+      }
+
+      case "PENDING_CAPTURE_GET": {
+        if (sender.tabId === undefined) return { ok: true, data: { prompt: null } };
+        return { ok: true, data: { prompt: await resolvePrompt(deps, sender.tabId, sender.url) } };
+      }
+
+      case "CAPTURE_DECISION": {
+        if (sender.tabId === undefined) return fail("Not allowed.");
+        const result = await applyDecision(
+          deps,
+          sender.tabId,
+          sender.url,
+          message.payload.decision
+        );
+        return result.ok ? { ok: true, data: { done: true } } : fail(result.error);
+      }
+
       case "VAULT_CREATE":
         await service.create(message.payload.password);
+        deps.onUnlocked?.();
         return { ok: true, data: { done: true } };
 
       case "VAULT_UNLOCK":
         await service.unlock(message.payload.password);
+        deps.onUnlocked?.();
         return { ok: true, data: { done: true } };
 
       case "VAULT_LOCK":

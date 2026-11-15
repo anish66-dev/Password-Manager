@@ -162,3 +162,123 @@ export class FormTracker {
     this.dirty = false;
   }
 }
+
+/** A form where the user chooses a new password: registration or password change. */
+export interface CaptureForm {
+  kind: "register" | "change";
+  /** The new password the user typed. */
+  newPassword: HTMLInputElement;
+  /** The repeat-password field, when the form has one. */
+  confirm: HTMLInputElement | null;
+  /** Visible username or email field, or a hidden autocomplete="username" field. */
+  username: HTMLInputElement | null;
+  /** Element that contains the whole form (a <form> or a nearby container). */
+  container: Element;
+}
+
+const NEW_HINT = /new.?pass|new.?pwd|nieuw|neu.?pass/i;
+const CURRENT_HINT = /current|old|existing|previous|cur.?pass/i;
+
+function autocompleteOf(input: HTMLInputElement): string {
+  return (input.getAttribute("autocomplete") ?? "").toLowerCase();
+}
+
+function hintText(input: HTMLInputElement): string {
+  return `${input.name} ${input.id} ${input.placeholder} ${input.getAttribute("aria-label") ?? ""}`;
+}
+
+function looksNew(input: HTMLInputElement): boolean {
+  return autocompleteOf(input) === "new-password" || NEW_HINT.test(hintText(input));
+}
+
+function looksCurrent(input: HTMLInputElement): boolean {
+  return autocompleteOf(input) === "current-password" || CURRENT_HINT.test(hintText(input));
+}
+
+const CONTAINER_SELECTOR = "form, dialog, [role='dialog'], section, article, main";
+
+function groupContainer(password: HTMLInputElement): Element {
+  return password.form ?? password.closest(CONTAINER_SELECTOR) ?? password.ownerDocument.body;
+}
+
+/** Username or email for a form: visible field first, then a hidden autocomplete="username". */
+function findCaptureUsername(
+  firstPassword: HTMLInputElement,
+  container: Element,
+  visible: VisibilityCheck
+): HTMLInputElement | null {
+  const found = findUsernameFor(firstPassword, visible);
+  if (found) return found;
+  const hidden = container.querySelector<HTMLInputElement>(
+    'input[autocomplete~="username"], input[autocomplete~="email"]'
+  );
+  return hidden && !hidden.disabled ? hidden : null;
+}
+
+/**
+ * Finds registration and change-password forms:
+ *  - two password fields and no "current password" first field: new + confirm (registration)
+ *  - current + new (+ confirm): change password
+ *  - a lone field that says it is a new password: change password
+ */
+export function findCaptureForms(
+  root: ParentNode,
+  visible: VisibilityCheck = isVisible
+): CaptureForm[] {
+  const groups = new Map<Element, HTMLInputElement[]>();
+  for (const password of root.querySelectorAll<HTMLInputElement>('input[type="password"]')) {
+    if (!isUsable(password, visible)) continue;
+    const container = groupContainer(password);
+    const list = groups.get(container) ?? [];
+    list.push(password);
+    groups.set(container, list);
+  }
+
+  const forms: CaptureForm[] = [];
+  for (const [container, passwords] of groups) {
+    const first = passwords[0];
+    if (!first) continue;
+    const username = (): HTMLInputElement | null => findCaptureUsername(first, container, visible);
+
+    if (passwords.length === 1) {
+      if (looksNew(first)) {
+        forms.push({
+          kind: "change",
+          newPassword: first,
+          confirm: null,
+          username: username(),
+          container,
+        });
+      }
+      continue;
+    }
+
+    const second = passwords[1];
+    if (!second) continue;
+    if (passwords.length === 2) {
+      const firstIsCurrent = looksCurrent(first) && !looksNew(first);
+      forms.push(
+        firstIsCurrent
+          ? { kind: "change", newPassword: second, confirm: null, username: username(), container }
+          : {
+              kind: "register",
+              newPassword: first,
+              confirm: second,
+              username: username(),
+              container,
+            }
+      );
+      continue;
+    }
+
+    // Three or more: current, new, confirm.
+    forms.push({
+      kind: "change",
+      newPassword: second,
+      confirm: passwords[2] ?? null,
+      username: username(),
+      container,
+    });
+  }
+  return forms;
+}

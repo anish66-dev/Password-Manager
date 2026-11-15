@@ -149,3 +149,27 @@ npm run serve:test-pages        # http://localhost:5173/
 3. Open `http://localhost:5173/login.html`, click into a field, then click the suggestion.
 4. Try `dynamic.html` (JavaScript-rendered, controlled inputs) and `hostile.html` (every probe line should say PASS).
 5. Run `npm run build` again before using the extension on real sites.
+
+---
+
+## Phase 4: Save and update prompts
+
+- **What is detected** (`extension/src/content/detect.ts`): registration forms (two password fields: new + confirm) and change-password forms (current + new, optionally + confirm; or a field marked `autocomplete="new-password"`). The username is the nearest visible username/email field, or a hidden `autocomplete="username"` field on change-password pages.
+- **When it captures** (`capture.ts`): on a real `submit` event, on Enter inside the form, and on a click of a submit-like control (covers script-driven forms). Only after a trusted user gesture, never when the confirm field does not match, and ignored when the browser would block the submit.
+- **Where the password lives:** the content script sends one `CREDENTIAL_CAPTURED` message to the service worker. The worker keeps it in memory only, per tab, for 60 seconds. It is never written to any storage, and the prompt UI only receives the password's length.
+- **The prompt** reuses the extension-owned frame (top-right corner): site, username, masked password, and Save/Update, Never, Not now. It is also shown after a redirect, but only on the same site as the capture.
+- **Update vs save:** the worker decides. The same registrable domain and username (case-insensitive) is an Update, never a duplicate. A change-password page with no username updates the single saved login on that site. An unchanged password asks nothing.
+- **Never:** stored as an encrypted `never_save` record (one per site), so it syncs later and reveals nothing.
+- **Locked vault:** the prompt says "Unlock to save" and the capture is kept until it expires. Unlocking the vault makes the prompt switch to Save/Update.
+- Only https pages (and localhost in the dev-localhost build) are ever offered a save prompt.
+
+### Testing save prompts
+
+Use the dev-localhost build and the test server as for Phase 3 (`npm run build:dev-localhost`, `npm run serve:test-pages`), then:
+
+1. `register.html`: fill the first form, submit. You are redirected to `welcome.html`, where the prompt appears. Choose Save.
+2. `login.html`: your new login is offered and fills.
+3. `change-password.html`: save a login for `http://localhost` with username `demo` first, then change the password. The prompt says Update.
+4. `register.html`, second form: script-driven button, no submit event. The prompt should still appear.
+5. Choose Never on a site, then submit again: no prompt. Choose Not now: nothing is stored.
+6. Lock the vault, submit a registration: "Unlock to save". Unlock in the popup: the prompt turns into Save.

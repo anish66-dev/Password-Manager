@@ -311,6 +311,41 @@ export class Vault {
     return toEntry(file, payload);
   }
 
+  /** Registrable domains the user chose never to be asked to save passwords for. */
+  async readNeverSave(): Promise<string[]> {
+    const domains = new Set<string>();
+    for (const file of await this.store.listRecords()) {
+      try {
+        const payload = await decryptRecord(this.vek, file);
+        if (payload.kind === "never_save") {
+          for (const domain of payload.domains) domains.add(domain);
+        }
+      } catch {
+        // Records that fail authentication are reported by readAll(); never merged here.
+      }
+    }
+    return [...domains];
+  }
+
+  /** Stored as its own encrypted never_save record, so it syncs and leaks nothing. */
+  async addNeverSave(domain: string): Promise<void> {
+    const normalized = domain.trim().toLowerCase();
+    if (normalized === "") throw new VaultCryptoError("INVALID_INPUT");
+    if ((await this.readNeverSave()).includes(normalized)) return;
+    const stamp = this.now().toISOString();
+    const file = await encryptRecord(
+      this.vek,
+      {
+        record_id: crypto.randomUUID(),
+        schema_version: SCHEMA_VERSION,
+        record_version: 1,
+        updated_at: stamp,
+      },
+      { kind: "never_save", domains: [normalized] }
+    );
+    await this.store.putRecord(file);
+  }
+
   /** Writes a tombstone: a new record version with deleted = true and no secrets. */
   async delete(id: string): Promise<void> {
     const existing = await this.store.getRecord(id);

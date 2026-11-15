@@ -6,6 +6,7 @@ import {
 } from "@password-manager/shared";
 import { handleExtensionMessage, type SenderInfo } from "./router.js";
 import { VaultService } from "./vault-service.js";
+import { PendingCaptures } from "./capture-flow.js";
 import { MemoryKeyValueStore } from "../storage/key-value.js";
 
 const popup: SenderInfo = {
@@ -26,7 +27,12 @@ let service: VaultService;
 let frameNonces: Map<number, string>;
 
 function send(message: unknown, sender: SenderInfo = popup) {
-  return handleExtensionMessage(message, sender, { service, allowLocalhost: false, frameNonces });
+  return handleExtensionMessage(message, sender, {
+    service,
+    allowLocalhost: false,
+    frameNonces,
+    captures: new PendingCaptures(),
+  });
 }
 
 beforeEach(() => {

@@ -1,4 +1,10 @@
-import { type FocusState, type Suggestion } from "@password-manager/shared";
+import {
+  type CaptureDecision,
+  type CapturePrompt,
+  type FocusState,
+  type Suggestion,
+  isCapturePrompt,
+} from "@password-manager/shared";
 
 /**
  * Messages between the content script and the extension-owned suggestion iframe. They travel
@@ -12,13 +18,16 @@ export interface FrameInit {
   nonce: string;
 }
 
-export type ToFrame = { type: "render"; state: FocusState; suggestions: Suggestion[] };
+export type ToFrame =
+  | { type: "render"; state: FocusState; suggestions: Suggestion[] }
+  | { type: "prompt"; prompt: CapturePrompt };
 
 export type FromFrame =
   | { type: "ready" }
   | { type: "select"; id: string }
   | { type: "size"; height: number }
-  | { type: "dismiss" };
+  | { type: "dismiss" }
+  | { type: "decision"; decision: CaptureDecision };
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -29,6 +38,7 @@ export function isFrameInit(value: unknown): value is FrameInit {
 }
 
 export function isToFrame(value: unknown): value is ToFrame {
+  if (isObject(value) && value["type"] === "prompt") return isCapturePrompt(value["prompt"]);
   if (!isObject(value) || value["type"] !== "render") return false;
   const state = value["state"];
   const suggestions = value["suggestions"];
@@ -56,6 +66,12 @@ export function isFromFrame(value: unknown): value is FromFrame {
       return true;
     case "select":
       return typeof value["id"] === "string";
+    case "decision":
+      return (
+        value["decision"] === "accept" ||
+        value["decision"] === "never" ||
+        value["decision"] === "dismiss"
+      );
     case "size":
       return (
         typeof value["height"] === "number" &&
