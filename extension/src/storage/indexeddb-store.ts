@@ -5,9 +5,8 @@ import {
   isValidRecordFile,
   isValidVaultHeader,
 } from "@password-manager/shared";
+import { openVaultDb } from "./db.js";
 
-const DB_NAME = "pm-vault";
-const DB_VERSION = 1;
 const META_STORE = "meta";
 const RECORD_STORE = "records";
 const HEADER_KEY = "header";
@@ -38,22 +37,9 @@ export class IndexedDbLocalStore implements LocalStore {
 
   private open(): Promise<IDBDatabase> {
     if (!this.dbPromise) {
-      this.dbPromise = new Promise((resolve, reject) => {
-        const req = this.factory.open(DB_NAME, DB_VERSION);
-        req.onupgradeneeded = () => {
-          const db = req.result;
-          if (!db.objectStoreNames.contains(META_STORE)) {
-            db.createObjectStore(META_STORE);
-          }
-          if (!db.objectStoreNames.contains(RECORD_STORE)) {
-            db.createObjectStore(RECORD_STORE, { keyPath: "record_id" });
-          }
-        };
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => {
-          this.dbPromise = null;
-          reject(new Error("Could not open local storage."));
-        };
+      this.dbPromise = openVaultDb(this.factory).catch((err) => {
+        this.dbPromise = null;
+        throw err;
       });
     }
     return this.dbPromise;

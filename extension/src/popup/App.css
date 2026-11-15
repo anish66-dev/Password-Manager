@@ -307,3 +307,40 @@ button.danger {
   font-size: 12px;
   margin: 10px 0 0;
 }
+
+/* Phase 5: sync */
+.sync-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.sync-error {
+  color: var(--danger);
+}
+
+.sync-warning {
+  flex-basis: 100%;
+  color: var(--locked-color);
+}
+
+.sync-new-password,
+.restore-card {
+  margin-bottom: 8px;
+}
+
+.restore-card {
+  margin-top: 8px;
+}
+
+.conflict-badge {
+  margin-left: 6px;
+  color: var(--locked-color);
+  border-color: rgba(245, 158, 11, 0.4);
+  background-color: rgba(245, 158, 11, 0.12);
+}

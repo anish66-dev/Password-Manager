@@ -4,6 +4,7 @@ import {
   type LoginDetail,
   type LoginSummary,
   type PopupStatusResponseData,
+  type SyncStatusData,
   type VaultStatus,
   isDoneData,
   isPopupStatusData,
@@ -11,6 +12,13 @@ import {
   isVaultListData,
 } from "@password-manager/shared";
 import { sendToBackground } from "../messages/client.js";
+import {
+  DriveSettings,
+  NewPasswordBanner,
+  RestoreFromDrive,
+  SyncBar,
+  useSyncStatus,
+} from "./SyncUi.js";
 
 type View = { name: "list" } | { name: "form"; entry: LoginDetail | null } | { name: "settings" };
 
@@ -198,6 +206,8 @@ function EntryForm(props: { entry: LoginDetail | null; onDone: () => void; onCan
 
 function SettingsView(props: {
   autoLockMinutes: number;
+  sync: SyncStatusData | null;
+  onSync: (status: SyncStatusData) => void;
   onBack: () => void;
   onChanged: () => void;
 }) {
@@ -279,6 +289,7 @@ function SettingsView(props: {
       </form>
       <ErrorBanner message={error} />
       {message && <div className="ok-banner">{message}</div>}
+      <DriveSettings status={props.sync} onStatus={props.onSync} />
       <button type="button" className="ghost wide" onClick={props.onBack}>
         Back
       </button>
@@ -335,7 +346,17 @@ function EntryRow(props: {
         <div className="entry-url" title={entry.url}>
           {entry.url}
         </div>
-        <div className="entry-user">{entry.username || "(no username)"}</div>
+        <div className="entry-user">
+          {entry.username || "(no username)"}
+          {entry.conflict && (
+            <span
+              className="badge conflict-badge"
+              title="A version of a login that changed on two devices at once. Keep or delete it."
+            >
+              Conflict copy
+            </span>
+          )}
+        </div>
         {revealed !== null && <div className="entry-password">{revealed}</div>}
       </div>
       <div className="entry-actions">
@@ -369,6 +390,7 @@ function VaultView(props: {
   const [entries, setEntries] = useState<LoginSummary[]>([]);
   const [rejected, setRejected] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const { status: sync, refresh: refreshSync, setStatus: setSync } = useSyncStatus();
 
   const { onLocked } = props;
   const load = useCallback(async () => {
@@ -403,9 +425,14 @@ function VaultView(props: {
         </button>
       </div>
 
+      <NewPasswordBanner status={sync} onDone={() => void refreshSync()} />
+      <SyncBar status={sync} onStatus={setSync} />
+
       {view.name === "settings" && (
         <SettingsView
           autoLockMinutes={props.autoLockMinutes}
+          sync={sync}
+          onSync={setSync}
           onBack={() => setView({ name: "list" })}
           onChanged={props.onSettingsChanged}
         />
@@ -501,7 +528,12 @@ export const App: React.FC = () => {
 
       <main className="popup-content">
         <ErrorBanner message={error} />
-        {!loading && status === "uninitialized" && <CreateVault onDone={() => void refresh()} />}
+        {!loading && status === "uninitialized" && (
+          <>
+            <CreateVault onDone={() => void refresh()} />
+            <RestoreFromDrive onDone={() => void refresh()} />
+          </>
+        )}
         {!loading && status === "locked" && <UnlockForm onDone={() => void refresh()} />}
         {!loading && status === "unlocked" && (
           <VaultView

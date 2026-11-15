@@ -4,6 +4,8 @@ import {
   type LoginEntry,
   type LoginSummary,
   MIN_MASTER_PASSWORD_LENGTH,
+  StorageError,
+  SyncError,
   VaultCryptoError,
   VaultError,
   type MatchOptions,
@@ -16,6 +18,7 @@ import {
 } from "@password-manager/shared";
 import { ServiceError } from "./vault-service.js";
 import { type CaptureDeps, applyDecision, resolvePrompt } from "./capture-flow.js";
+import { type SyncService } from "./sync-service.js";
 
 export const APP_NAME = "Personal Password Manager";
 export const APP_VERSION = "0.1.0";
@@ -39,6 +42,8 @@ export interface RouterDeps extends CaptureDeps {
   frameNonces: Map<number, string>;
   /** Called after the vault is created or unlocked, so tabs can retry a waiting prompt. */
   onUnlocked?: () => void;
+  /** Cloud sync. Absent in contexts that have no sync (some tests). */
+  sync?: SyncService;
 }
 
 function senderMatches(kind: string, sender: SenderInfo): boolean {
@@ -58,6 +63,7 @@ function summarize(entry: LoginEntry): LoginSummary {
     url: entry.url,
     username: entry.username,
     modified_at: entry.modified_at,
+    conflict: entry.conflict_of !== undefined,
   };
 }
 
@@ -188,17 +194,32 @@ export async function handleExtensionMessage(
           sender.url,
           message.payload.decision
         );
+        if (result.ok && message.payload.decision !== "dismiss") deps.sync?.scheduleSync();
         return result.ok ? { ok: true, data: { done: true } } : fail(result.error);
       }
 
       case "VAULT_CREATE":
         await service.create(message.payload.password);
         deps.onUnlocked?.();
+        deps.sync?.onUnlocked();
         return { ok: true, data: { done: true } };
 
       case "VAULT_UNLOCK":
-        await service.unlock(message.payload.password);
+        try {
+          await service.unlock(message.payload.password);
+        } catch (err) {
+          // After a master password change on another device the local header is stale.
+          // The new password unlocks the newer cloud header, which is then adopted.
+          const wrong = err instanceof VaultError && err.code === "BAD_PASSWORD";
+          if (!wrong || !deps.sync || !(await deps.sync.hasPendingHeader())) throw err;
+          try {
+            await deps.sync.applyNewPassword(message.payload.password);
+          } catch {
+            throw err; // Report the original wrong-password error, nothing more.
+          }
+        }
         deps.onUnlocked?.();
+        deps.sync?.onUnlocked();
         return { ok: true, data: { done: true } };
 
       case "VAULT_LOCK":
@@ -223,6 +244,7 @@ export async function handleExtensionMessage(
         const vault = await service.requireVault();
         const { url, username, password } = message.payload;
         const entry = await vault.add({ url, username, password });
+        deps.sync?.scheduleSync();
         return { ok: true, data: { entry: detail(entry) } };
       }
 
@@ -230,12 +252,14 @@ export async function handleExtensionMessage(
         const vault = await service.requireVault();
         const { id, url, username, password } = message.payload;
         const entry = await vault.update(id, { url, username, password });
+        deps.sync?.scheduleSync();
         return { ok: true, data: { entry: detail(entry) } };
       }
 
       case "VAULT_DELETE": {
         const vault = await service.requireVault();
         await vault.delete(message.payload.id);
+        deps.sync?.scheduleSync();
         return { ok: true, data: { done: true } };
       }
 
@@ -246,6 +270,45 @@ export async function handleExtensionMessage(
           throw new ServiceError("WEAK_PASSWORD");
         }
         await vault.changeMasterPassword(currentPassword, newPassword);
+        deps.sync?.scheduleSync();
+        return { ok: true, data: { done: true } };
+      }
+
+      case "SYNC_GET_STATUS":
+        return deps.sync
+          ? { ok: true, data: await deps.sync.getStatus() }
+          : fail("Sync is not available.");
+
+      case "SYNC_SIGN_IN":
+        return deps.sync
+          ? { ok: true, data: await deps.sync.signIn() }
+          : fail("Sync is not available.");
+
+      case "SYNC_SIGN_OUT":
+        return deps.sync
+          ? { ok: true, data: await deps.sync.signOut() }
+          : fail("Sync is not available.");
+
+      case "SYNC_NOW":
+        return deps.sync
+          ? { ok: true, data: await deps.sync.syncNow() }
+          : fail("Sync is not available.");
+
+      case "SYNC_CHECK_REMOTE":
+        return deps.sync
+          ? { ok: true, data: { exists: await deps.sync.remoteVaultExists() } }
+          : fail("Sync is not available.");
+
+      case "SYNC_SETUP_FROM_CLOUD": {
+        if (!deps.sync) return fail("Sync is not available.");
+        await deps.sync.setupFromCloud(message.payload.password);
+        deps.onUnlocked?.();
+        return { ok: true, data: { done: true } };
+      }
+
+      case "SYNC_APPLY_NEW_PASSWORD": {
+        if (!deps.sync) return fail("Sync is not available.");
+        await deps.sync.applyNewPassword(message.payload.password);
         return { ok: true, data: { done: true } };
       }
 
@@ -255,7 +318,12 @@ export async function handleExtensionMessage(
     }
   } catch (err) {
     // Only fixed, secret-free messages reach the caller. Everything else is generic.
-    if (err instanceof ServiceError || err instanceof VaultError) {
+    if (
+      err instanceof ServiceError ||
+      err instanceof VaultError ||
+      err instanceof SyncError ||
+      err instanceof StorageError
+    ) {
       return fail(err.message);
     }
     if (err instanceof VaultCryptoError) {

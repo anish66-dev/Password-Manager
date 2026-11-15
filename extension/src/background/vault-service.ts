@@ -1,4 +1,5 @@
 import {
+  type Bytes,
   DEFAULT_AUTOLOCK_MINUTES,
   type KdfParams,
   type LocalStore,
@@ -116,6 +117,22 @@ export class VaultService {
     }
     await this.session.set(SESSION_ACTIVITY, this.now());
     return this.cached;
+  }
+
+  /**
+   * The unlocked key for background work such as sync, or null when locked. Unlike
+   * requireVault() this does not count as user activity, so a background task can never keep
+   * an idle vault unlocked.
+   */
+  async peekSessionKey(): Promise<Bytes | null> {
+    if (!(await this.isSessionActive())) return null;
+    const encoded = await this.session.get<string>(SESSION_VEK);
+    return encoded ? fromBase64(encoded) : null;
+  }
+
+  /** Starts a session from a key that was just unwrapped elsewhere (new device, new password). */
+  async adoptKey(vek: Bytes): Promise<void> {
+    await this.startSession(Vault.fromVek(this.store, vek, this.options()));
   }
 
   /** Called by the periodic alarm so an idle vault locks even if no message arrives. */

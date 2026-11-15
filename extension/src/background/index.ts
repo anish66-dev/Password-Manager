@@ -3,14 +3,35 @@ import { chromeLocalStore, chromeSessionStore } from "../storage/key-value.js";
 import { handleExtensionMessage, type RouterDeps, type SenderInfo } from "./router.js";
 import { VaultService } from "./vault-service.js";
 import { PendingCaptures } from "./capture-flow.js";
+import { DriveAdapter } from "../sync/drive-adapter.js";
+import { ChromeTokenProvider } from "../sync/auth.js";
+import { IndexedDbSyncStateStore } from "../storage/sync-state-store.js";
+import { SyncService } from "./sync-service.js";
 
 const AUTOLOCK_ALARM = "autolock-check";
+const SYNC_ALARM = "sync-periodic";
 
 declare const __ALLOW_LOCALHOST__: boolean | undefined;
 
+const localStore = new IndexedDbLocalStore();
 const service = new VaultService({
-  store: new IndexedDbLocalStore(),
+  store: localStore,
   session: chromeSessionStore,
+  settings: chromeLocalStore,
+});
+
+const tokens = new ChromeTokenProvider();
+const sync = new SyncService({
+  store: localStore,
+  state: new IndexedDbSyncStateStore(),
+  adapter: new DriveAdapter({ tokens }),
+  auth: {
+    signIn: async () => {
+      await tokens.getToken(true);
+    },
+    signOut: () => tokens.signOut(),
+  },
+  vault: service,
   settings: chromeLocalStore,
 });
 
@@ -26,6 +47,7 @@ function notifyPendingTabs(): void {
 const deps: RouterDeps = {
   service,
   captures,
+  sync,
   onUnlocked: notifyPendingTabs,
   // Replaced at build time. True only for the dev-localhost build.
   allowLocalhost: typeof __ALLOW_LOCALHOST__ !== "undefined" && __ALLOW_LOCALHOST__ === true,
@@ -82,8 +104,12 @@ chrome.runtime.onInstalled.addListener(() => {
 
 // Service workers sleep, so inactivity is enforced with an alarm instead of a timer.
 chrome.alarms.create(AUTOLOCK_ALARM, { periodInMinutes: 1 });
+chrome.alarms.create(SYNC_ALARM, { periodInMinutes: 5 });
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === AUTOLOCK_ALARM) {
     void service.checkAutoLock();
+  } else if (alarm.name === SYNC_ALARM) {
+    // Does nothing while the vault is locked or sync is off.
+    void sync.syncNow();
   }
 });

@@ -90,6 +90,8 @@ export interface LoginEntry extends LoginInput {
   created_at: string;
   modified_at: string;
   record_version: number;
+  /** Present on conflict copies created by sync. */
+  conflict_of?: string;
 }
 
 export interface ReadAllResult {
@@ -180,6 +182,7 @@ function toEntry(file: RecordFile, payload: LoginPayload): LoginEntry {
     created_at: payload.created_at,
     modified_at: payload.modified_at,
     record_version: file.record_version,
+    ...(payload.conflict_of !== undefined ? { conflict_of: payload.conflict_of } : {}),
   };
 }
 

@@ -39,6 +39,11 @@ export interface LoginPayload {
   created_at: string;
   modified_at: string;
   deleted: boolean;
+  /**
+   * Set on a conflict copy: the record whose edit lost a sync conflict. The copy is a normal
+   * record that syncs and can be edited or deleted.
+   */
+  conflict_of?: string;
 }
 
 export interface NeverSavePayload {
@@ -105,7 +110,8 @@ export function isValidRecordPayload(value: unknown): value is RecordPayload {
       typeof value["password"] === "string" &&
       typeof value["created_at"] === "string" &&
       typeof value["modified_at"] === "string" &&
-      typeof value["deleted"] === "boolean"
+      typeof value["deleted"] === "boolean" &&
+      (value["conflict_of"] === undefined || typeof value["conflict_of"] === "string")
     );
   }
   if (value["kind"] === "never_save") {

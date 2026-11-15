@@ -8,3 +8,4 @@ coverage/
 Thumbs.db
 doc/
 *.tsbuildinfo
+extension/oauth.config.json

@@ -173,3 +173,36 @@ Use the dev-localhost build and the test server as for Phase 3 (`npm run build:d
 4. `register.html`, second form: script-driven button, no submit event. The prompt should still appear.
 5. Choose Never on a site, then submit again: no prompt. Choose Not now: nothing is stored.
 6. Lock the vault, submit a registration: "Unlock to save". Unlock in the popup: the prompt turns into Save.
+
+---
+
+## Phase 5: Cloud-folder sync (Chrome)
+
+- **Storage:** Google Drive's hidden app data folder (`drive.appdata` scope), through a small `StorageAdapter` interface (`list`, `download`, `upload`, `delete`). The app can see only its own folder, never your other files. The folder holds `header.json` and one `<uuid>.json` per record: ciphertext and random names only.
+- **Sync algorithm** (`shared/src/sync`, pure logic, tested with two simulated devices): list the folder and download only files whose revision changed; verify and decrypt every download (failures are rejected and reported, never merged); remote newer and local unchanged takes remote; local newer and remote unchanged uploads; both changed keeps the later modification as current and stores the other as a **conflict copy** (shown with a badge). A cloud copy older than what was already synced is ignored as stale. Deletes are tombstones and sync like edits.
+- **Pending changes** are derived, not stored: a record is pending when its local version is above the last synced version.
+- **Header conflicts:** a local header is never uploaded over a newer cloud header. If the master password was changed on another device, the popup asks for the new password; unlocking with it also works.
+- **New device:** "Restore from Google Drive" signs in, checks the vault exists, asks for the master password, and only then stores the header locally.
+- **Triggers:** after unlock, about 3 seconds after a local change, every 5 minutes (alarm), and the Sync now button. Sync needs the unlocked key to verify records, so it never runs while the vault is locked, and background syncs never count as activity for auto-lock.
+- **Different vault in the cloud:** if Drive already holds a different vault than the one on this device, nothing is merged and an error is shown.
+
+### Cloud sync setup (you do this once)
+
+Google requires an OAuth client tied to your extension's ID. Nothing below is committed to git.
+
+1. **Get the extension ID.** `npm run build`, load `extension/dist` unpacked, and copy the ID shown at `chrome://extensions`. It stays the same as long as you load it from the same folder. (Optional: `npm run oauth:key --workspace=extension` creates a key that pins the ID wherever you load it from. That changes the ID, which gives a new empty vault, so do it before you store real data. The command prints the ID to use.)
+2. **Create a Google Cloud project** at [console.cloud.google.com](https://console.cloud.google.com/), then enable the **Google Drive API** (APIs and Services, Library).
+3. **Configure the OAuth consent screen** (Google Auth Platform, Branding / Audience): app name, your email, user type **External**.
+4. **Add the scope** `.../auth/drive.appdata` under Data Access. It is listed under non-sensitive scopes, so no Google verification should be needed. Confirm what the console shows for it.
+5. **Publishing status: set it to "In production".** In "Testing" status Google can expire consent every 7 days, which would sign sync out unexpectedly. With only a non-sensitive scope, publishing should need no review, and only you will use it. While in Testing, add your own Google account under Test users.
+6. **Create the OAuth client**: Credentials, Create credentials, OAuth client ID, application type **Chrome extension**, and paste the extension ID from step 1 as the Item ID. Copy the client ID (it ends in `.apps.googleusercontent.com`).
+7. **Give it to the build**: copy `extension/oauth.config.example.json` to `extension/oauth.config.json` (gitignored) and set `clientId`. Do not add a `key` field unless you ran `npm run oauth:key`; an invalid one is ignored with a warning. Rebuild (`npm run build`) and reload the extension. The build prints a warning if no client ID is set.
+8. **Connect**: popup, Settings, Connect Google Drive, and approve the consent screen. On a second device or Chrome profile, use "Restore from Google Drive" on the empty popup.
+
+If sign-in later asks again, sync pauses with "Cloud sign-in is required" and your changes stay queued; reconnect in Settings.
+
+### Testing sync
+
+1. Create a login on profile A, connect Google Drive, press Sync now. In Drive's app data folder you cannot browse it directly; check DevTools, Network on the service worker, that requests to `googleapis.com` contain only ciphertext.
+2. In a second Chrome profile, load the same build, choose Restore from Google Drive, and enter the master password.
+3. Edit offline (DevTools, Network, Offline on the service worker, or turn off Wi-Fi), reconnect, and watch it sync. Edit the same login on both profiles while offline to see a conflict copy.

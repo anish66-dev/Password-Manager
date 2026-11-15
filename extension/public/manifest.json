@@ -3,7 +3,7 @@
   "name": "Personal Password Manager",
   "version": "0.1.0",
   "description": "Local-first password manager with cloud sync.",
-  "permissions": ["storage", "alarms"],
+  "permissions": ["storage", "alarms", "identity"],
   "content_security_policy": {
     "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';"
   },
@@ -28,5 +28,9 @@
       "resources": ["suggestions.html", "assets/*"],
       "matches": ["http://*/*", "https://*/*"]
     }
-  ]
+  ],
+  "oauth2": {
+    "client_id": "REPLACE_WITH_YOUR_OAUTH_CLIENT_ID.apps.googleusercontent.com",
+    "scopes": ["https://www.googleapis.com/auth/drive.appdata"]
+  }
 }

@@ -22,9 +22,9 @@ export default tsPlugin.config(
     },
   },
   {
-    files: ["test-pages/**/*.mjs"],
+    files: ["test-pages/**/*.mjs", "extension/scripts/**/*.mjs"],
     languageOptions: {
-      globals: { process: "readonly", URL: "readonly", console: "readonly" },
+      globals: { process: "readonly", URL: "readonly", console: "readonly", Buffer: "readonly" },
     },
   },
   {

@@ -31,7 +31,14 @@ export type ExtensionMessage =
   | { type: "FRAME_CLAIM"; payload: { nonce: string } }
   | { type: "CREDENTIAL_CAPTURED"; payload: CapturedCredentials }
   | { type: "PENDING_CAPTURE_GET" }
-  | { type: "CAPTURE_DECISION"; payload: { decision: CaptureDecision } };
+  | { type: "CAPTURE_DECISION"; payload: { decision: CaptureDecision } }
+  | { type: "SYNC_GET_STATUS" }
+  | { type: "SYNC_SIGN_IN" }
+  | { type: "SYNC_SIGN_OUT" }
+  | { type: "SYNC_NOW" }
+  | { type: "SYNC_CHECK_REMOTE" }
+  | { type: "SYNC_SETUP_FROM_CLOUD"; payload: { password: string } }
+  | { type: "SYNC_APPLY_NEW_PASSWORD"; payload: { password: string } };
 
 export type CaptureKind = "register" | "change";
 
@@ -84,6 +91,8 @@ export interface LoginSummary {
   url: string;
   username: string;
   modified_at: string;
+  /** True for a conflict copy: a version that lost a sync conflict and was kept. */
+  conflict: boolean;
 }
 
 export interface LoginDetail extends LoginSummary {
@@ -134,6 +143,27 @@ export interface CapturePrompt {
 
 export interface CapturePromptResponseData {
   prompt: CapturePrompt | null;
+}
+
+export type SyncPhase = "off" | "idle" | "syncing" | "pending" | "error";
+
+export interface SyncStatusData {
+  /** Sync has been set up with a cloud sign-in. */
+  enabled: boolean;
+  phase: SyncPhase;
+  lastSyncAt: string | null;
+  /** Local changes not yet uploaded. */
+  pendingChanges: number;
+  /** A fixed, secret-free message about the last failure, if any. */
+  error: string | null;
+  /** The master password was changed on another device: the new password is needed. */
+  needsNewPassword: boolean;
+  /** Cloud files from the last run that failed verification and were skipped. */
+  rejected: number;
+}
+
+export interface RemoteVaultData {
+  exists: boolean;
 }
 
 export interface DoneResponseData {
@@ -216,7 +246,15 @@ export function isValidExtensionMessage(msg: unknown): msg is ExtensionMessage {
     case "FRAME_CLAIM":
       return isObject(payload) && isUuidLike(payload["nonce"]);
     case "PENDING_CAPTURE_GET":
+    case "SYNC_GET_STATUS":
+    case "SYNC_SIGN_IN":
+    case "SYNC_SIGN_OUT":
+    case "SYNC_NOW":
+    case "SYNC_CHECK_REMOTE":
       return true;
+    case "SYNC_SETUP_FROM_CLOUD":
+    case "SYNC_APPLY_NEW_PASSWORD":
+      return isObject(payload) && isBoundedString(payload["password"], 1);
     case "CREDENTIAL_CAPTURED":
       return (
         isObject(payload) &&
@@ -280,6 +318,7 @@ export function isContentScriptPingData(data: unknown): data is ContentScriptPin
 function isLoginSummary(value: unknown): value is LoginSummary {
   return (
     isObject(value) &&
+    typeof value["conflict"] === "boolean" &&
     typeof value["id"] === "string" &&
     typeof value["url"] === "string" &&
     typeof value["username"] === "string" &&
@@ -344,4 +383,25 @@ export function isCapturePrompt(value: unknown): value is CapturePrompt {
 
 export function isCapturePromptData(data: unknown): data is CapturePromptResponseData {
   return isObject(data) && (data["prompt"] === null || isCapturePrompt(data["prompt"]));
+}
+
+export function isSyncStatusData(data: unknown): data is SyncStatusData {
+  return (
+    isObject(data) &&
+    typeof data["enabled"] === "boolean" &&
+    (data["phase"] === "off" ||
+      data["phase"] === "idle" ||
+      data["phase"] === "syncing" ||
+      data["phase"] === "pending" ||
+      data["phase"] === "error") &&
+    (data["lastSyncAt"] === null || typeof data["lastSyncAt"] === "string") &&
+    typeof data["pendingChanges"] === "number" &&
+    (data["error"] === null || typeof data["error"] === "string") &&
+    typeof data["needsNewPassword"] === "boolean" &&
+    typeof data["rejected"] === "number"
+  );
+}
+
+export function isRemoteVaultData(data: unknown): data is RemoteVaultData {
+  return isObject(data) && typeof data["exists"] === "boolean";
 }
