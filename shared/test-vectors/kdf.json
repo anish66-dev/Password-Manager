@@ -1,0 +1,24 @@
+{
+  "description": "master_key = Argon2id(utf8(password), salt, params); kek = HKDF-SHA256(master_key, zero-salt-32, 'vault-kek')",
+  "salt_b64": "AAECAwQFBgcICQoLDA0ODw==",
+  "cases": [
+    {
+      "description": "Argon2id with small parameters (fast)",
+      "password": "correct horse battery staple",
+      "memory_kib": 64,
+      "iterations": 2,
+      "parallelism": 1,
+      "master_key_b64": "LfR+3mNY7Repl21PztuJehADbUMqSs7xfSY7/Ji9IKw=",
+      "kek_b64": "H9uNRTcsznmBUQxSt+mSzlEF7njWZUTglA7E/9SzFTU="
+    },
+    {
+      "description": "Argon2id with the default parameters (64 MiB, 3 iterations, 1 lane)",
+      "password": "pässwörd-✓-🔑",
+      "memory_kib": 65536,
+      "iterations": 3,
+      "parallelism": 1,
+      "master_key_b64": "7/OjN7fER2KRg6/3V24Qpp3i0ffAecxZFjmdqiHS9dU=",
+      "kek_b64": "kpBBWoWPRT/4GEXL90RPyeJHRYmwAgzrnBOo0/7uRtY="
+    }
+  ]
+}

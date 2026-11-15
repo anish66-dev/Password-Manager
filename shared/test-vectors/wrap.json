@@ -1,0 +1,38 @@
+{
+  "description": "AES-256-GCM(KEK, VEK), AAD = utf8('vek|' + format_version), tag appended",
+  "kek_b64": "QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl8=",
+  "vek_b64": "gIGCg4SFhoeIiYqLjI2Oj5CRkpOUlZaXmJmam5ydnp8=",
+  "format_version": 1,
+  "aad_utf8": "vek|1",
+  "wrapped_vek": {
+    "nonce": "oKGio6Slpqeoqaqr",
+    "ciphertext": "Vw6EvGZuGqrx5st1BTG+eX+GZ1R4+hO6ekV0AXVf4Gdx/vlstWXnioUWxHNpAgpn"
+  },
+  "must_fail": [
+    {
+      "reason": "wrong format_version (AAD mismatch)",
+      "format_version": 2,
+      "wrapped_vek": {
+        "nonce": "oKGio6Slpqeoqaqr",
+        "ciphertext": "Vw6EvGZuGqrx5st1BTG+eX+GZ1R4+hO6ekV0AXVf4Gdx/vlstWXnioUWxHNpAgpn"
+      }
+    },
+    {
+      "reason": "ciphertext bit flipped",
+      "format_version": 1,
+      "wrapped_vek": {
+        "nonce": "oKGio6Slpqeoqaqr",
+        "ciphertext": "Vg6EvGZuGqrx5st1BTG+eX+GZ1R4+hO6ekV0AXVf4Gdx/vlstWXnioUWxHNpAgpn"
+      }
+    },
+    {
+      "reason": "wrong KEK",
+      "kek_b64": "QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVpbXF1eX2A=",
+      "format_version": 1,
+      "wrapped_vek": {
+        "nonce": "oKGio6Slpqeoqaqr",
+        "ciphertext": "Vw6EvGZuGqrx5st1BTG+eX+GZ1R4+hO6ekV0AXVf4Gdx/vlstWXnioUWxHNpAgpn"
+      }
+    }
+  ]
+}

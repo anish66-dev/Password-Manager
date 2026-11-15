@@ -5,10 +5,12 @@ import {
 } from "@password-manager/shared";
 
 /**
- * Sends a strongly-typed message to the background service worker and validates the response at the boundary.
+ * Sends a strongly-typed message to the background service worker. The response envelope
+ * and its data are validated at the boundary with the supplied validator.
  */
 export async function sendToBackground<TResponseData>(
-  message: ExtensionMessage
+  message: ExtensionMessage,
+  validator: (data: unknown) => data is TResponseData
 ): Promise<ExtensionResponse<TResponseData>> {
   if (typeof chrome === "undefined" || !chrome.runtime?.sendMessage) {
     return {
@@ -18,18 +20,24 @@ export async function sendToBackground<TResponseData>(
   }
 
   try {
-    const rawResponse = await chrome.runtime.sendMessage(message);
-    if (!isValidExtensionResponse<TResponseData>(rawResponse)) {
+    const rawResponse: unknown = await chrome.runtime.sendMessage(message);
+    if (!isValidExtensionResponse<TResponseData>(rawResponse, validator)) {
+      // A well-formed error envelope is still a valid reply.
+      if (
+        typeof rawResponse === "object" &&
+        rawResponse !== null &&
+        (rawResponse as { ok?: unknown }).ok === false &&
+        typeof (rawResponse as { error?: unknown }).error === "string"
+      ) {
+        return { ok: false, error: (rawResponse as { error: string }).error };
+      }
       return {
         ok: false,
         error: "Malformed response received from service worker boundary.",
       };
     }
     return rawResponse;
-  } catch (err) {
-    return {
-      ok: false,
-      error: err instanceof Error ? err.message : String(err),
-    };
+  } catch {
+    return { ok: false, error: "Could not reach the background service." };
   }
 }

@@ -115,3 +115,13 @@ npm run format
    - It displays the app name, current placeholder vault status (`LOCKED`), and handshake confirmation.
 8. Inspecting background service worker logs:
    - Click `service worker` link under the extension entry in `chrome://extensions` to view the service worker console.
+
+---
+
+## Phase 2: Crypto and local vault
+
+- **Key chain:** master password -> Argon2id (`hash-wasm`, 64 MiB / 3 iterations / 1 lane) -> HKDF-SHA256 (`vault-kek`) -> KEK -> unwraps a random 32-byte VEK. Every record is AES-256-GCM under the VEK with its ID and versions bound in as AAD.
+- **Storage:** IndexedDB holds only the header and ciphertext records.
+- **Session:** the unlocked VEK is held in the service worker and in `chrome.storage.session` (RAM only; cleared on browser restart or extension reload). An alarm locks the vault after inactivity (default 10 minutes, configurable in Settings).
+- **Test vectors:** regenerate with `UPDATE_VECTORS=1 npx vitest run shared/src/crypto/vectors.test.ts`. Review the diff before committing; changing them breaks Android compatibility.
+- A forgotten master password cannot be recovered.

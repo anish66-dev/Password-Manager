@@ -1,7 +1,4 @@
-import {
-  type ContentScriptPingResponseData,
-  isValidExtensionResponse,
-} from "@password-manager/shared";
+import { isContentScriptPingData, isValidExtensionResponse } from "@password-manager/shared";
 
 // Double check top-frame execution as defense-in-depth
 if (window.top === window) {
@@ -17,7 +14,7 @@ if (window.top === window) {
       (rawResponse) => {
         // Handshake only. Nothing is logged into the host page's console.
         void chrome.runtime.lastError;
-        void isValidExtensionResponse<ContentScriptPingResponseData>(rawResponse);
+        void isValidExtensionResponse(rawResponse, isContentScriptPingData);
       }
     );
   }

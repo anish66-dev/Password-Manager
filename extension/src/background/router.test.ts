@@ -1,51 +1,166 @@
-import { describe, it, expect } from "vitest";
-import { handleExtensionMessage } from "./router.js";
+import { describe, it, expect, beforeEach } from "vitest";
 import {
-  type PopupStatusResponseData,
-  type ContentScriptPingResponseData,
+  InMemoryLocalStore,
+  type LoginDetail,
+  type VaultListResponseData,
 } from "@password-manager/shared";
+import { handleExtensionMessage, type SenderInfo } from "./router.js";
+import { VaultService } from "./vault-service.js";
+import { MemoryKeyValueStore } from "../storage/key-value.js";
 
-describe("Background Message Router", () => {
-  it("handles POPUP_GET_STATUS and returns locked status", async () => {
-    const res = await handleExtensionMessage({ type: "POPUP_GET_STATUS" });
-    expect(res.ok).toBe(true);
-    if (res.ok) {
-      const data = res.data as PopupStatusResponseData;
-      expect(data.appName).toBe("Personal Password Manager");
-      expect(data.status).toBe("locked");
-      expect(data.version).toBe("0.1.0");
-      expect(typeof data.timestamp).toBe("string");
-    }
+const popup: SenderInfo = {
+  url: "chrome-extension://abc/popup.html",
+  isExtensionPage: true,
+  isContentScript: false,
+};
+const tab: SenderInfo = {
+  url: "https://example.com/login",
+  isExtensionPage: false,
+  isContentScript: true,
+};
+
+let service: VaultService;
+
+function send(message: unknown, sender: SenderInfo = popup) {
+  return handleExtensionMessage(message, sender, service);
+}
+
+beforeEach(() => {
+  service = new VaultService({
+    store: new InMemoryLocalStore(),
+    session: new MemoryKeyValueStore(),
+    settings: new MemoryKeyValueStore(),
+    kdf: { memory_kib: 64, iterations: 1, parallelism: 1 },
+  });
+});
+
+describe("boundary validation and sender checks", () => {
+  it("rejects invalid messages", async () => {
+    expect((await send(null)).ok).toBe(false);
+    expect((await send({ type: "NON_EXISTENT_TYPE" })).ok).toBe(false);
+    expect((await send({ type: "CONTENT_SCRIPT_PING", payload: { wrongField: 1 } }, tab)).ok).toBe(
+      false
+    );
+    expect(
+      (await send({ type: "VAULT_ADD", payload: { url: "", username: "u", password: "p" } })).ok
+    ).toBe(false);
+    expect((await send({ type: "VAULT_SET_AUTOLOCK", payload: { minutes: 0 } })).ok).toBe(false);
   });
 
-  it("handles CONTENT_SCRIPT_PING and uses the sender url, not the page-supplied one", async () => {
-    const res = await handleExtensionMessage(
-      {
-        type: "CONTENT_SCRIPT_PING",
-        payload: { url: "https://evil.example/spoofed" },
-      },
-      "https://example.com/login"
+  it("answers CONTENT_SCRIPT_PING with the sender url, not the page-supplied one", async () => {
+    const res = await send(
+      { type: "CONTENT_SCRIPT_PING", payload: { url: "https://evil.example/spoofed" } },
+      tab
     );
     expect(res.ok).toBe(true);
     if (res.ok) {
-      const data = res.data as ContentScriptPingResponseData;
-      expect(data.acknowledged).toBe(true);
-      expect(data.receivedFromUrl).toBe("https://example.com/login");
-      expect(typeof data.timestamp).toBe("string");
+      expect((res.data as { receivedFromUrl: string }).receivedFromUrl).toBe(
+        "https://example.com/login"
+      );
     }
   });
 
-  it("rejects invalid messages at the boundary", async () => {
-    const res1 = await handleExtensionMessage(null);
-    expect(res1.ok).toBe(false);
+  it("refuses every vault message from a content script", async () => {
+    await send({ type: "VAULT_CREATE", payload: { password: "a-long-master-password" } });
+    const messages = [
+      { type: "POPUP_GET_STATUS" },
+      { type: "VAULT_LIST", payload: { query: "" } },
+      { type: "VAULT_GET", payload: { id: "x" } },
+      { type: "VAULT_UNLOCK", payload: { password: "a-long-master-password" } },
+      { type: "VAULT_LOCK" },
+    ];
+    for (const message of messages) {
+      const res = await send(message, tab);
+      expect(res.ok).toBe(false);
+    }
+  });
 
-    const res2 = await handleExtensionMessage({ type: "NON_EXISTENT_TYPE" });
-    expect(res2.ok).toBe(false);
+  it("refuses a ping from an extension page", async () => {
+    const res = await send(
+      { type: "CONTENT_SCRIPT_PING", payload: { url: "https://x.example" } },
+      popup
+    );
+    expect(res.ok).toBe(false);
+  });
+});
 
-    const res3 = await handleExtensionMessage({
-      type: "CONTENT_SCRIPT_PING",
-      payload: { wrongField: 123 },
+describe("vault flow through the router", () => {
+  const MASTER = "a-long-master-password";
+
+  it("starts uninitialized, then unlocked after create, locked after lock", async () => {
+    const status = async () =>
+      ((await send({ type: "POPUP_GET_STATUS" })) as { data: { status: string } }).data.status;
+    expect(await status()).toBe("uninitialized");
+    expect((await send({ type: "VAULT_CREATE", payload: { password: MASTER } })).ok).toBe(true);
+    expect(await status()).toBe("unlocked");
+    await send({ type: "VAULT_LOCK" });
+    expect(await status()).toBe("locked");
+    expect((await send({ type: "VAULT_LIST", payload: { query: "" } })).ok).toBe(false);
+    expect(
+      (await send({ type: "VAULT_UNLOCK", payload: { password: "wrong-password-here" } })).ok
+    ).toBe(false);
+    expect((await send({ type: "VAULT_UNLOCK", payload: { password: MASTER } })).ok).toBe(true);
+  });
+
+  it("rejects a short master password", async () => {
+    const res = await send({ type: "VAULT_CREATE", payload: { password: "short" } });
+    expect(res.ok).toBe(false);
+  });
+
+  it("adds, lists (without passwords), gets, updates and deletes", async () => {
+    await send({ type: "VAULT_CREATE", payload: { password: MASTER } });
+    const added = await send({
+      type: "VAULT_ADD",
+      payload: { url: "https://example.com", username: "alice", password: "pw-one" },
     });
-    expect(res3.ok).toBe(false);
+    expect(added.ok).toBe(true);
+    const id = (added as { data: { entry: LoginDetail } }).data.entry.id;
+
+    const list = await send({ type: "VAULT_LIST", payload: { query: "exam" } });
+    expect(list.ok).toBe(true);
+    const listData = (list as { data: VaultListResponseData }).data;
+    expect(listData.entries).toHaveLength(1);
+    expect(JSON.stringify(listData)).not.toContain("pw-one");
+
+    const got = await send({ type: "VAULT_GET", payload: { id } });
+    expect((got as { data: { entry: LoginDetail } }).data.entry.password).toBe("pw-one");
+
+    await send({
+      type: "VAULT_UPDATE",
+      payload: { id, url: "https://example.com", username: "alice", password: "pw-two" },
+    });
+    const again = await send({ type: "VAULT_GET", payload: { id } });
+    expect((again as { data: { entry: LoginDetail } }).data.entry.password).toBe("pw-two");
+
+    expect((await send({ type: "VAULT_DELETE", payload: { id } })).ok).toBe(true);
+    expect((await send({ type: "VAULT_GET", payload: { id } })).ok).toBe(false);
+  });
+
+  it("changes the master password", async () => {
+    await send({ type: "VAULT_CREATE", payload: { password: MASTER } });
+    const bad = await send({
+      type: "VAULT_CHANGE_PASSWORD",
+      payload: { currentPassword: "not-the-password", newPassword: "another-long-password" },
+    });
+    expect(bad.ok).toBe(false);
+    const good = await send({
+      type: "VAULT_CHANGE_PASSWORD",
+      payload: { currentPassword: MASTER, newPassword: "another-long-password" },
+    });
+    expect(good.ok).toBe(true);
+    await send({ type: "VAULT_LOCK" });
+    expect((await send({ type: "VAULT_UNLOCK", payload: { password: MASTER } })).ok).toBe(false);
+    expect(
+      (await send({ type: "VAULT_UNLOCK", payload: { password: "another-long-password" } })).ok
+    ).toBe(true);
+  });
+
+  it("never echoes the master password or internals in error text", async () => {
+    await send({ type: "VAULT_CREATE", payload: { password: MASTER } });
+    await send({ type: "VAULT_LOCK" });
+    const secret = "hunter2-wrong-password";
+    const res = await send({ type: "VAULT_UNLOCK", payload: { password: secret } });
+    expect(res.ok).toBe(false);
+    expect(JSON.stringify(res)).not.toContain(secret);
   });
 });
