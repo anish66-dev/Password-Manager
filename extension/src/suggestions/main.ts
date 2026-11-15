@@ -51,8 +51,11 @@ function render(state: FocusState, suggestions: Suggestion[]): void {
     }
   }
 
-  // Report the content height after layout so the host can size the iframe.
-  requestAnimationFrame(() => send({ type: "size", height: Math.ceil(card.scrollHeight) + 2 }));
+  // Report the content height once layout is done. Timers, not requestAnimationFrame: a
+  // hidden cross-origin iframe may not get animation frames.
+  const reportSize = (): void => send({ type: "size", height: Math.ceil(card.scrollHeight) + 2 });
+  setTimeout(reportSize, 0);
+  setTimeout(reportSize, 60);
 }
 
 document.addEventListener("keydown", (event) => {

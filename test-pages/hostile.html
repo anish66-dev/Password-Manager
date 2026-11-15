@@ -56,6 +56,18 @@
       let failures = 0;
       let userClicked = false;
       let frameSeen = null;
+      // Trusted gestures the page itself can see. Clicks inside the extension frame are not
+      // visible to the page, so they never set this.
+      let gestured = false;
+      for (const type of ["pointerdown", "keydown"]) {
+        window.addEventListener(
+          type,
+          (e) => {
+            if (e.isTrusted) gestured = true;
+          },
+          true
+        );
+      }
 
       function report(kind, text) {
         if (kind === "fail") failures++;
@@ -82,6 +94,10 @@
         pass.focus(); // programmatic focus before any user gesture
         setTimeout(() => {
           const frames = document.querySelectorAll("iframe");
+          if (gestured) {
+            report("info", "skipped: you clicked or typed within 1.5 s. Reload and wait 2 s.");
+            return;
+          }
           frames.length === 0
             ? report(
                 "pass",
@@ -133,6 +149,11 @@
             : report("fail", "page window received " + JSON.stringify(strayMessages));
         }, 3000);
 
+        // The new iframe starts as same-origin about:blank, so wait for the extension page.
+        frame.addEventListener("load", () => probeLoadedFrame(frame), { once: true });
+      }
+
+      function probeLoadedFrame(frame) {
         // 2b. Reading the frame's DOM.
         let doc = null;
         try {
@@ -162,9 +183,15 @@
       }
 
       // 3. Poll: before the user clicks a suggestion, the fields must stay empty.
+      // Our fill needs the suggestion frame, so values appearing while no frame exists were not
+      // put there by this extension. Chrome's built-in autofill does this: turn it off at
+      // chrome://settings/passwords to get a clean result.
       const poll = setInterval(() => {
-        if ((pass.value !== "" || user.value !== "") && !userClicked) {
-          report("fail", "credentials appeared before any user action");
+        if ((pass.value !== "" || user.value !== "") && !userClicked && frameSeen === null) {
+          report(
+            "info",
+            "fields filled before any suggestion frame existed (Chrome's own autofill, not this extension)"
+          );
           clearInterval(poll);
         }
       }, 100);

@@ -54,7 +54,29 @@ export class SuggestionFrame {
     this.visible = false;
     this.anchor = null;
     this.offered = new Set();
-    if (this.iframe) this.iframe.style.display = "none";
+    this.applyHidden();
+  }
+
+  /**
+   * Style helpers. The iframe's styles all carry !important and the element is never
+   * display:none: a display:none iframe has no layout (so its content height cannot be
+   * measured) and an `all: initial` rule would otherwise override plain left/top values,
+   * which left the frame at its static position at the bottom of the page.
+   */
+  private setStyle(property: string, value: string): void {
+    this.iframe?.style.setProperty(property, value, "important");
+  }
+
+  private applyHidden(): void {
+    this.setStyle("visibility", "hidden");
+    this.setStyle("pointer-events", "none");
+    this.setStyle("height", "0px");
+  }
+
+  private applyShown(height: number): void {
+    this.setStyle("height", `${height}px`);
+    this.setStyle("visibility", "visible");
+    this.setStyle("pointer-events", "auto");
   }
 
   reposition(): void {
@@ -72,8 +94,8 @@ export class SuggestionFrame {
     if (top + height > view.innerHeight && rect.top - 4 - height >= 0) {
       top = rect.top - 4 - height;
     }
-    this.iframe.style.left = `${left}px`;
-    this.iframe.style.top = `${top}px`;
+    this.setStyle("left", `${left}px`);
+    this.setStyle("top", `${top}px`);
   }
 
   destroy(): void {
@@ -119,7 +141,10 @@ export class SuggestionFrame {
         "position: fixed",
         "z-index: 2147483647",
         "border: 0",
-        "display: none",
+        "left: 0",
+        "top: 0",
+        "visibility: hidden",
+        "pointer-events: none",
         `width: ${FRAME_WIDTH}px`,
         "height: 0",
         "color-scheme: light",
@@ -151,10 +176,14 @@ export class SuggestionFrame {
             resolve();
             break;
           case "size":
-            iframe.style.setProperty("height", `${data.height}px`, "important");
-            iframe.style.setProperty("display", data.height > 0 ? "block" : "none", "important");
-            this.visible = data.height > 0;
-            this.reposition();
+            if (data.height > 0 && this.anchor) {
+              this.visible = true;
+              this.applyShown(data.height);
+              this.reposition();
+            } else {
+              this.visible = false;
+              this.applyHidden();
+            }
             break;
           case "select":
             this.handlers.onSelect(data.id);
