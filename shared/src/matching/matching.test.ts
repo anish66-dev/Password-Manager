@@ -1,4 +1,7 @@
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { matchesPage, pageSiteKey, recordSiteKey } from "./matching.js";
 
 type Row = [description: string, record: string, page: string, expected: boolean];
@@ -112,5 +115,21 @@ describe("site keys", () => {
   it("is null for ineligible pages", () => {
     expect(pageSiteKey("http://example.com")).toBeNull();
     expect(pageSiteKey("https://example.com@evil.com")).toBeNull();
+  });
+});
+
+describe("shared matching fixture (also run by the Android tests)", () => {
+  const fixture = JSON.parse(
+    readFileSync(
+      path.resolve(
+        path.dirname(fileURLToPath(import.meta.url)),
+        "../../test-vectors/matching.json"
+      ),
+      "utf8"
+    )
+  ) as { rows: Array<{ description: string; record: string; page: string; expected: boolean }> };
+
+  it("is identical to the table above", () => {
+    expect(fixture.rows.map((r) => [r.description, r.record, r.page, r.expected])).toEqual(rows);
   });
 });

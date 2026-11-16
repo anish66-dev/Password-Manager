@@ -1,0 +1,218 @@
+{
+  "description": "Sync scenarios replayed by both the TypeScript and Kotlin sync engines. Two devices (A, B) share one fake cloud folder and one fake clock. Ops: create, join, add, edit, delete, never_save, tick(ms), sync (with optional expect), offline(value), tamper_record(ref), snapshot_record(ref), restore_record(ref), expect_logins(device, logins), expect_pending(device, count), expect_cloud_file_count(count). Logins are compared as sorted 'username|password|conflict' strings. A 'ref' names a record across devices.",
+  "kdf": { "memory_kib": 64, "iterations": 1, "parallelism": 1 },
+  "password": "first-master-password",
+  "start_time": "2026-01-01T00:00:00.000Z",
+  "scenarios": [
+    {
+      "name": "first device uploads header and records, second run changes nothing",
+      "steps": [
+        { "op": "create", "device": "A" },
+        { "op": "expect_pending", "device": "A", "count": 1 },
+        {
+          "op": "add",
+          "device": "A",
+          "ref": "r1",
+          "url": "https://a.example",
+          "username": "u1",
+          "password": "p1"
+        },
+        { "op": "never_save", "device": "A", "domain": "never.example" },
+        {
+          "op": "sync",
+          "device": "A",
+          "expect": {
+            "uploaded": 2,
+            "downloaded": 0,
+            "conflicts": 0,
+            "headerStatus": "uploaded",
+            "pending": 0
+          }
+        },
+        { "op": "expect_cloud_file_count", "count": 3 },
+        {
+          "op": "sync",
+          "device": "A",
+          "expect": {
+            "uploaded": 0,
+            "downloaded": 0,
+            "conflicts": 0,
+            "headerStatus": "unchanged",
+            "pending": 0
+          }
+        }
+      ]
+    },
+    {
+      "name": "new device sets up from the cloud and syncs edits both ways",
+      "steps": [
+        { "op": "create", "device": "A" },
+        {
+          "op": "add",
+          "device": "A",
+          "ref": "r1",
+          "url": "https://a.example",
+          "username": "u1",
+          "password": "p1"
+        },
+        { "op": "sync", "device": "A" },
+        { "op": "join", "device": "B" },
+        { "op": "sync", "device": "B", "expect": { "downloaded": 1, "uploaded": 0 } },
+        { "op": "expect_logins", "device": "B", "logins": ["u1|p1|"] },
+        { "op": "tick", "ms": 1000 },
+        { "op": "edit", "device": "B", "ref": "r1", "password": "p2" },
+        { "op": "sync", "device": "B", "expect": { "uploaded": 1 } },
+        { "op": "sync", "device": "A", "expect": { "downloaded": 1 } },
+        { "op": "expect_logins", "device": "A", "logins": ["u1|p2|"] }
+      ]
+    },
+    {
+      "name": "delete syncs as a tombstone",
+      "steps": [
+        { "op": "create", "device": "A" },
+        {
+          "op": "add",
+          "device": "A",
+          "ref": "r1",
+          "url": "https://a.example",
+          "username": "u1",
+          "password": "p1"
+        },
+        { "op": "sync", "device": "A" },
+        { "op": "join", "device": "B" },
+        { "op": "sync", "device": "B" },
+        { "op": "tick", "ms": 1000 },
+        { "op": "delete", "device": "A", "ref": "r1" },
+        { "op": "sync", "device": "A", "expect": { "uploaded": 1 } },
+        { "op": "sync", "device": "B", "expect": { "downloaded": 1 } },
+        { "op": "expect_logins", "device": "B", "logins": [] },
+        { "op": "expect_logins", "device": "A", "logins": [] }
+      ]
+    },
+    {
+      "name": "offline edits are queued and sync after reconnecting",
+      "steps": [
+        { "op": "create", "device": "A" },
+        {
+          "op": "add",
+          "device": "A",
+          "ref": "r1",
+          "url": "https://a.example",
+          "username": "u1",
+          "password": "p1"
+        },
+        { "op": "sync", "device": "A" },
+        { "op": "offline", "value": true },
+        { "op": "tick", "ms": 1000 },
+        { "op": "edit", "device": "A", "ref": "r1", "password": "p2" },
+        { "op": "sync_fails", "device": "A", "code": "NETWORK" },
+        { "op": "expect_pending", "device": "A", "count": 1 },
+        { "op": "offline", "value": false },
+        { "op": "sync", "device": "A", "expect": { "uploaded": 1, "pending": 0 } }
+      ]
+    },
+    {
+      "name": "conflict: remote edit is later, local edit kept as a conflict copy",
+      "steps": [
+        { "op": "create", "device": "A" },
+        {
+          "op": "add",
+          "device": "A",
+          "ref": "r1",
+          "url": "https://a.example",
+          "username": "u1",
+          "password": "p1"
+        },
+        { "op": "sync", "device": "A" },
+        { "op": "join", "device": "B" },
+        { "op": "sync", "device": "B" },
+        { "op": "tick", "ms": 1000 },
+        { "op": "edit", "device": "A", "ref": "r1", "password": "from-a" },
+        { "op": "tick", "ms": 1000 },
+        { "op": "edit", "device": "B", "ref": "r1", "password": "from-b" },
+        { "op": "sync", "device": "B", "expect": { "uploaded": 1 } },
+        { "op": "sync", "device": "A", "expect": { "conflicts": 1, "downloaded": 1 } },
+        { "op": "expect_logins", "device": "A", "logins": ["u1|from-a|conflict", "u1|from-b|"] },
+        { "op": "sync", "device": "B", "expect": { "downloaded": 1 } },
+        { "op": "sync", "device": "A" },
+        { "op": "expect_logins", "device": "B", "logins": ["u1|from-a|conflict", "u1|from-b|"] }
+      ]
+    },
+    {
+      "name": "conflict: local edit is later, it stays current and the remote edit becomes a copy",
+      "steps": [
+        { "op": "create", "device": "A" },
+        {
+          "op": "add",
+          "device": "A",
+          "ref": "r1",
+          "url": "https://a.example",
+          "username": "u1",
+          "password": "p1"
+        },
+        { "op": "sync", "device": "A" },
+        { "op": "join", "device": "B" },
+        { "op": "sync", "device": "B" },
+        { "op": "tick", "ms": 1000 },
+        { "op": "edit", "device": "B", "ref": "r1", "password": "from-b" },
+        { "op": "tick", "ms": 1000 },
+        { "op": "edit", "device": "A", "ref": "r1", "password": "from-a" },
+        { "op": "sync", "device": "B", "expect": { "uploaded": 1 } },
+        { "op": "sync", "device": "A", "expect": { "conflicts": 1 } },
+        { "op": "expect_logins", "device": "A", "logins": ["u1|from-a|", "u1|from-b|conflict"] },
+        { "op": "sync", "device": "B" },
+        { "op": "sync", "device": "A" },
+        { "op": "expect_logins", "device": "B", "logins": ["u1|from-a|", "u1|from-b|conflict"] }
+      ]
+    },
+    {
+      "name": "tampered cloud file is rejected and never merged",
+      "steps": [
+        { "op": "create", "device": "A" },
+        {
+          "op": "add",
+          "device": "A",
+          "ref": "r1",
+          "url": "https://a.example",
+          "username": "u1",
+          "password": "p1"
+        },
+        { "op": "sync", "device": "A" },
+        { "op": "tamper_record", "ref": "r1" },
+        { "op": "join", "device": "B" },
+        { "op": "sync", "device": "B", "expect": { "rejected": 1, "downloaded": 0 } },
+        { "op": "expect_logins", "device": "B", "logins": [] }
+      ]
+    },
+    {
+      "name": "older cloud copy is ignored as stale and the newer one is restored",
+      "steps": [
+        { "op": "create", "device": "A" },
+        {
+          "op": "add",
+          "device": "A",
+          "ref": "r1",
+          "url": "https://a.example",
+          "username": "u1",
+          "password": "p1"
+        },
+        { "op": "sync", "device": "A" },
+        { "op": "snapshot_record", "ref": "r1" },
+        { "op": "tick", "ms": 1000 },
+        { "op": "edit", "device": "A", "ref": "r1", "password": "p2" },
+        { "op": "sync", "device": "A", "expect": { "uploaded": 1 } },
+        { "op": "restore_record", "ref": "r1" },
+        { "op": "sync", "device": "A", "expect": { "stale": 1, "uploaded": 1, "downloaded": 0 } },
+        { "op": "expect_logins", "device": "A", "logins": ["u1|p2|"] }
+      ]
+    },
+    {
+      "name": "a wrong master password cannot join",
+      "steps": [
+        { "op": "create", "device": "A" },
+        { "op": "sync", "device": "A" },
+        { "op": "join_fails", "device": "B", "password": "wrong-password", "code": "BAD_PASSWORD" }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,227 @@
+{
+  "description": "matchesPage(record_url, page_url) with default options (production rules). Both the TypeScript and Kotlin matchers must agree on every row.",
+  "rows": [
+    {
+      "description": "same origin",
+      "record": "https://example.com",
+      "page": "https://example.com/login",
+      "expected": true
+    },
+    {
+      "description": "subdomain of the saved domain",
+      "record": "https://example.com",
+      "page": "https://accounts.example.com/",
+      "expected": true
+    },
+    {
+      "description": "saved subdomain, page on apex",
+      "record": "https://login.example.com",
+      "page": "https://example.com/",
+      "expected": true
+    },
+    {
+      "description": "record without scheme means https",
+      "record": "example.com",
+      "page": "https://example.com/",
+      "expected": true
+    },
+    {
+      "description": "uppercase and trailing dot",
+      "record": "https://EXAMPLE.com",
+      "page": "https://www.example.com./x",
+      "expected": true
+    },
+    {
+      "description": "different port, same site",
+      "record": "https://example.com",
+      "page": "https://example.com:8443/",
+      "expected": true
+    },
+    {
+      "description": "multi-label public suffix",
+      "record": "https://example.co.uk",
+      "page": "https://www.example.co.uk/",
+      "expected": true
+    },
+    {
+      "description": "saved http record, https page",
+      "record": "http://example.com",
+      "page": "https://example.com/",
+      "expected": true
+    },
+    {
+      "description": "different site",
+      "record": "https://example.com",
+      "page": "https://example.org/",
+      "expected": false
+    },
+    {
+      "description": "suffix-only lookalike (co.uk is not a site)",
+      "record": "https://example.co.uk",
+      "page": "https://evil.co.uk/",
+      "expected": false
+    },
+    {
+      "description": "sibling under a public suffix",
+      "record": "https://example.co.uk",
+      "page": "https://other.co.uk/",
+      "expected": false
+    },
+    {
+      "description": "domain used as a subdomain of another site",
+      "record": "https://example.com",
+      "page": "https://example.com.evil.com/",
+      "expected": false
+    },
+    {
+      "description": "domain embedded in a longer name",
+      "record": "https://example.com",
+      "page": "https://evil-example.com/",
+      "expected": false
+    },
+    {
+      "description": "domain as a prefix of another name",
+      "record": "https://example.com",
+      "page": "https://example.community/",
+      "expected": false
+    },
+    {
+      "description": "page is http",
+      "record": "https://example.com",
+      "page": "http://example.com/",
+      "expected": false
+    },
+    {
+      "description": "page is http and record is http",
+      "record": "http://example.com",
+      "page": "http://example.com/",
+      "expected": false
+    },
+    {
+      "description": "userinfo trick as page",
+      "record": "https://example.com",
+      "page": "https://example.com@evil.com/",
+      "expected": false
+    },
+    {
+      "description": "userinfo trick with credentials",
+      "record": "https://example.com",
+      "page": "https://user:pw@example.com/",
+      "expected": false
+    },
+    {
+      "description": "userinfo trick in the saved URL",
+      "record": "https://example.com@evil.com",
+      "page": "https://evil.com/",
+      "expected": false
+    },
+    {
+      "description": "punycode lookalike (accent)",
+      "record": "https://example.com",
+      "page": "https://xn--xample-9ua.com/",
+      "expected": false
+    },
+    {
+      "description": "unicode lookalike (cyrillic a)",
+      "record": "https://example.com",
+      "page": "https://exаmple.com/",
+      "expected": false
+    },
+    {
+      "description": "unicode lookalike saved, ascii page",
+      "record": "https://exаmple.com",
+      "page": "https://example.com/",
+      "expected": false
+    },
+    {
+      "description": "punycode page equals punycode record",
+      "record": "https://xn--xample-9ua.com",
+      "page": "https://éxample.com/",
+      "expected": true
+    },
+    {
+      "description": "private suffix siblings (github.io)",
+      "record": "https://alice.github.io",
+      "page": "https://bob.github.io/",
+      "expected": false
+    },
+    {
+      "description": "same private-suffix site",
+      "record": "https://alice.github.io",
+      "page": "https://alice.github.io/page",
+      "expected": true
+    },
+    {
+      "description": "IP address page",
+      "record": "https://192.168.0.1",
+      "page": "https://192.168.0.1/",
+      "expected": false
+    },
+    {
+      "description": "IPv6 page",
+      "record": "https://[2001:db8::1]",
+      "page": "https://[2001:db8::1]/",
+      "expected": false
+    },
+    {
+      "description": "single-label host",
+      "record": "https://intranet",
+      "page": "https://intranet/",
+      "expected": false
+    },
+    {
+      "description": "javascript: page",
+      "record": "https://example.com",
+      "page": "javascript:alert(1)",
+      "expected": false
+    },
+    {
+      "description": "data: page",
+      "record": "https://example.com",
+      "page": "data:text/html,<p>x</p>",
+      "expected": false
+    },
+    {
+      "description": "ftp page",
+      "record": "https://example.com",
+      "page": "ftp://example.com/",
+      "expected": false
+    },
+    {
+      "description": "chrome-extension page",
+      "record": "https://example.com",
+      "page": "chrome-extension://abc/popup.html",
+      "expected": false
+    },
+    {
+      "description": "garbage page",
+      "record": "https://example.com",
+      "page": "not a url",
+      "expected": false
+    },
+    {
+      "description": "empty page",
+      "record": "https://example.com",
+      "page": "",
+      "expected": false
+    },
+    {
+      "description": "empty record",
+      "record": "",
+      "page": "https://example.com/",
+      "expected": false
+    },
+    {
+      "description": "whitespace record",
+      "record": "   ",
+      "page": "https://example.com/",
+      "expected": false
+    },
+    {
+      "description": "ftp record",
+      "record": "ftp://example.com",
+      "page": "https://example.com/",
+      "expected": false
+    }
+  ]
+}

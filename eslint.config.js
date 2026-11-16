@@ -5,7 +5,7 @@ export default tsPlugin.config(
   js.configs.recommended,
   ...tsPlugin.configs.recommended,
   {
-    ignores: ["**/dist/**", "**/node_modules/**", "**/.vite/**", "doc/**"],
+    ignores: ["**/dist/**", "**/node_modules/**", "**/.vite/**", "doc/**", "android/**"],
   },
   {
     files: ["**/*.{ts,tsx}"],

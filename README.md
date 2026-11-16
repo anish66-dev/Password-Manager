@@ -3,7 +3,7 @@
 A personal, local-first password manager with encrypted cloud sync.
 
 - **Desktop (Windows/macOS/Linux):** Chrome Extension (Manifest V3) built with React and TypeScript.
-- **Mobile (Android):** Native Kotlin application (Jetpack Compose, Autofill Framework) [Phase 6].
+- **Mobile (Android):** Native Kotlin application (Jetpack Compose, Autofill Framework, biometric unlock) in `android/`.
 - **Sync:** Local-first encrypted JSON synchronization via user cloud folder (Google Drive app data folder). No hosted backend servers.
 
 ---
@@ -20,6 +20,7 @@ password-manager/
 │   │   ├── content/    # Content script for page interactions
 │   │   └── messages/   # Typed messaging client with runtime boundary validation
 │   └── vite.*.config.ts# Vite build configurations
+├── android/            # Android app (Kotlin, Jetpack Compose, Autofill Framework)
 ├── shared/             # Shared TypeScript logic (zero Chrome/React/DOM dependencies)
 │   └── src/
 │       └── types/      # Typed message schemas, responses, and boundary validators
@@ -206,3 +207,67 @@ If sign-in later asks again, sync pauses with "Cloud sign-in is required" and yo
 1. Create a login on profile A, connect Google Drive, press Sync now. In Drive's app data folder you cannot browse it directly; check DevTools, Network on the service worker, that requests to `googleapis.com` contain only ciphertext.
 2. In a second Chrome profile, load the same build, choose Restore from Google Drive, and enter the master password.
 3. Edit offline (DevTools, Network, Offline on the service worker, or turn off Wi-Fi), reconnect, and watch it sync. Edit the same login on both profiles while offline to see a conflict copy.
+
+---
+
+## Phase 6: Android app
+
+Native Kotlin app in `android/` (Jetpack Compose, minSdk 28, targetSdk 35). It uses the same vault, file format and sync algorithm as the Chrome extension, so both devices share one vault through the Drive folder.
+
+### What is in it
+
+- **Crypto and vault** (`app/.../core/`): the exact scheme from the plan over maintained libraries only: Argon2id and HKDF-SHA256 from Bouncy Castle, AES-256-GCM from the platform. Records are the same JSON files as in Chrome (`header.json`, `<uuid>.json`) in app-private storage. No key or plaintext is ever written to disk.
+- **Shared test fixtures** (`shared/test-vectors/`): `kdf.json`, `wrap.json` and `record.json` (including the must-fail AAD cases) plus two new files that **both** languages replay: `sync-scenarios.json` (first device, new device, edits, delete tombstones, offline queueing, both conflict directions, tampered file, stale file, wrong password) and `matching.json` (the domain-matching table). Kotlin even reproduces the TypeScript ciphertext byte for byte and the same conflict-copy ID.
+- **Sync** (`core/sync`, `core/storage`): a Kotlin port of `shared/src/sync`, a Drive REST v3 adapter (appDataFolder only, pagination, 401 refresh, back-off on 429/5xx) and Google's Authorization API for the `drive.appdata` scope. Triggers: after unlock, about 3 seconds after a local change, every 15 minutes (WorkManager), and the Sync now button.
+- **Unlock:** master password (Argon2id off the main thread) and optional biometrics. Enabling biometrics creates an Android Keystore key that needs strong biometric authentication for every use and encrypts the vault key; only that blob is stored. If the enrolled biometrics change, the key is invalidated and the master password is used. Auto-lock after inactivity (default 10 minutes).
+- **Autofill service:** matches by the web domain the browser reports (same registrable-domain rules as Chrome, https only) or, for native apps, by a package name you link to a login. The system dropdown shows only "Unlock/Fill from Password Manager". Nothing is returned until you authenticate in the app's own screen, and nothing is filled until you pick a login.
+- **Save flow:** `SaveInfo` makes Android offer to save or update a login. The same rules as Chrome apply: same registrable domain (or app) and username means update, never a duplicate; a site you marked "never save" in Chrome is honoured. If the vault is locked, the capture is kept in memory for 60 seconds and a notification asks you to unlock and confirm.
+- **Hardening:** `FLAG_SECURE` on every screen (no screenshots, no recent-apps preview), `allowBackup="false"` plus empty data-extraction rules, no cleartext traffic, no analytics, and no secrets in logs (error messages are fixed strings).
+
+### Build, test and install
+
+Requirements: JDK 17 or newer and the Android SDK (platform 36). Create `android/local.properties` with `sdk.dir=...` (Android Studio does this for you).
+
+```bash
+cd android
+./gradlew testDebugUnitTest      # crypto vectors, sync scenarios, matching, Drive adapter, save logic
+./gradlew assembleDebug          # app/build/outputs/apk/debug/app-debug.apk
+./gradlew installDebug           # installs on the connected phone (USB debugging on)
+```
+
+On Windows use `gradlew.bat` in `cmd`/PowerShell. `testapp/` is a tiny development-only app with a native login form for trying autofill; it is not part of the product (`./gradlew :testapp:installDebug`).
+
+### First run on the phone
+
+1. Open the app, create a vault, and use Settings, **Measure unlock speed**. The plan aims for roughly 0.5 to 1 second. The Argon2 parameters (64 MiB, 3 iterations, 1 lane) must stay identical on every device, so if it is much slower, tell me before changing them.
+2. Settings, **Open autofill settings**, choose Password Manager. In Chrome on Android, third-party autofill needs the "Autofill using another service" option, which depends on your Chrome version.
+3. To fill a native app, add a login, and type the app's package name in "Linked app package".
+4. Enable biometric unlock in Settings after unlocking with the master password.
+
+### Google Drive setup for Android (you do this once)
+
+Google matches the Android app by **package name plus signing certificate fingerprint**, so this needs its own OAuth client in the same Google Cloud project you made for Chrome (Drive API enabled, consent screen configured, scope `drive.appdata`, publishing status "In production").
+
+1. Get the SHA-1 of the key that signs your build. For a debug build:
+   ```bash
+   keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android -keypass android
+   ```
+2. Google Cloud console, Credentials, Create credentials, OAuth client ID, application type **Android**. Package name: `com.personal.passwordmanager`. Paste the SHA-1.
+3. Nothing needs to be added to the app or to git: no client ID is stored in the code.
+4. In the app: Settings, **Connect Google Drive**, approve the consent screen. On a phone without a vault, use **Restore from Google Drive** on the first screen and enter the master password.
+
+A release-signed or differently signed build has a different SHA-1 and needs its own entry. Add `allowLocalhost=true` to `android/local.properties` only for a development build that should match `http://localhost`.
+
+### Limits to know
+
+- Background sync only runs while the app process holds the unlocked key (the key is never stored). A locked vault simply skips the run and keeps changes queued; they sync after the next unlock.
+- Autofill asks for authentication through the unlock screen only when the vault is locked. While it is unlocked (within the auto-lock window) fill is one tap.
+- Linking a login to a native app adds an optional `app_package` field to that login's encrypted payload. The Chrome extension ignores and preserves it.
+- Unpaired surrogates in a master password are encoded differently by Kotlin and JavaScript. Ordinary text, including emoji, matches (the shared test vector covers it).
+
+### Testing end to end (checklist)
+
+1. Create a login in Chrome, sync, then **Restore from Google Drive** on the phone: it appears. Edit on the phone, sync, Sync now in Chrome: the edit appears. Delete on either side: it disappears on the other.
+2. Airplane mode: unlock with biometrics, fill a login in the test app or a browser, save a new login, turn the network back on: it syncs.
+3. Put a hand-edited file in the Drive folder: the phone rejects it and shows "Some files failed verification".
+4. Inspect the app's private files with `adb shell run-as com.personal.passwordmanager ls files/vault` (debug builds): only ciphertext. Check logs with `adb logcat`: no passwords.
